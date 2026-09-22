@@ -165,7 +165,7 @@ def generate_keys():
     return e, d, n, max_block_size
 
 # Enkripsi RSA
-def encrypt(text, e, n, block_size):
+def rsa_encrypt(text, e, n, block_size):
     blocks = text_to_blocks(text, block_size)
     cipher_blocks = []
     for block in blocks:
@@ -175,7 +175,7 @@ def encrypt(text, e, n, block_size):
     return cipher_blocks
 
 # Dekripsi RSA
-def decrypt(cipher_blocks, d, n, block_size):
+def rsa_decrypt(cipher_blocks, d, n, block_size):
     message_bytes = b''
     
     for C in cipher_blocks:
