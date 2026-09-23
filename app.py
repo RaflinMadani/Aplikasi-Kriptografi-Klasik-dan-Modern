@@ -468,14 +468,14 @@ elif menu.startswith("4"):
                         ark_chars = ''.join(num_to_char(x) for x in ark)
                         html_animasi += f"<b>1. AddRoundKey:</b> {nums} + {key_nums} = {ark} ➡️ <b>'{ark_chars}'</b><br>"
                         ui_animasi.markdown(html_animasi + "</div>", unsafe_allow_html=True)
-                        time.sleep(0.8)
+                        time.sleep(1.2)
                         
                         # 2. SubBytes
                         sb = [(x + 3) % 26 for x in ark]
                         sb_chars = ''.join(num_to_char(x) for x in sb)
                         html_animasi += f"<b>2. SubBytes (+3):</b> {ark} + 3 = {sb} ➡️ <b>'{sb_chars}'</b><br>"
                         ui_animasi.markdown(html_animasi + "</div>", unsafe_allow_html=True)
-                        time.sleep(0.8)
+                        time.sleep(1.2)
                         
                         # 3. ShiftRows
                         row0 = [sb[0], sb[1]]
@@ -499,14 +499,14 @@ elif menu.startswith("4"):
                         unshift_chars = ''.join(num_to_char(x) for x in unshift_nums)
                         html_animasi += f"<b>1. Inverse ShiftRows (Geser Baris Bawah Kanan):</b> ➡️ <b>'{unshift_chars}'</b><br>"
                         ui_animasi.markdown(html_animasi + "</div>", unsafe_allow_html=True)
-                        time.sleep(0.8)
+                        time.sleep(1.2)
                         
                         # 2. Inverse SubBytes
                         isb = [(x - 3) % 26 for x in unshift_nums]
                         isb_chars = ''.join(num_to_char(x) for x in isb)
                         html_animasi += f"<b>2. Inverse SubBytes (-3):</b> {unshift_nums} - 3 = {isb} ➡️ <b>'{isb_chars}'</b><br>"
                         ui_animasi.markdown(html_animasi + "</div>", unsafe_allow_html=True)
-                        time.sleep(0.8)
+                        time.sleep(1.2)
                         
                         # 3. Inverse AddRoundKey
                         iark = [(isb[i] - key_nums[i]) % 26 for i in range(4)]
@@ -525,7 +525,7 @@ elif menu.startswith("4"):
                     time.sleep(1.5) # Jeda antar blok agar pengguna bisa membaca
                 
                 # SETELAH SEMUA BLOK SELESAI, KOSONGKAN PLACEHOLDER (Hapus Animasi)
-                time.sleep(0.5)
+                time.sleep(0.8)
                 ui_judul_animasi.empty()
                 ui_animasi.empty()
                 ui_judul_hasil.empty()
