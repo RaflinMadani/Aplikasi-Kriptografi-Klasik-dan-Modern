@@ -1,4 +1,4 @@
-# Aplikasi Kriptografi A-Z (Streamlit)
+# Aplikasi Kriptografi A-Z (Streamlit).
 
 Aplikasi web untuk Enkripsi & Dekripsi teks dengan visualisasi langkah-langkah
 proses, dibuat untuk tugas kuliah Kriptografi. Semua algoritma beroperasi
