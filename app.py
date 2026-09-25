@@ -524,7 +524,7 @@ elif menu.startswith("5"):
                 else:
                     tahapan = [
                         ("AES Simplified", aes_simple_cipher, (aes_key, 'Dekripsi')),
-                        ("RC4 Cipher", rc4_mod26, (rc4_key, 'Dekripsi')),
+                        ("RC4 Cipher", rc4_cipher, (rc4_key, 'Dekripsi')),
                         ("Scytale Cipher", scytale_decrypt, (scytale_cols,)),
                         ("Caesar Cipher", caesar_cipher, (caesar_key, 'Dekripsi'))
                     ]
