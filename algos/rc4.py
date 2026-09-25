@@ -1,90 +1,53 @@
 """
-RC4 Cipher (Modern Stream Cipher) - versi termodifikasi mod 26.
-Menggunakan S-Box berukuran 26 (bukan 256) agar tetap beroperasi murni
-pada alfabet A-Z. Terdiri dari 2 tahap:
-    1. KSA  (Key Scheduling Algorithm)  -> mengacak S-Box berdasarkan kunci
-    2. PRGA (Pseudo-Random Generation Algorithm) -> menghasilkan keystream
-       yang dijumlahkan/dikurangkan (mod 26) dengan teks.
+RC4 Cipher (Standard 256-byte)
 """
-
-from algos.utils import clean_text, char_to_num, num_to_char
-
-
-def rc4_mod26(text, key, mode='Enkripsi'):
-    """
-    Melakukan enkripsi/dekripsi RC4 termodifikasi (basis 26 alfabet).
-
-    Parameters:
-        text (str): plaintext / ciphertext
-        key (str): kunci berupa huruf-huruf A-Z
-        mode (str): 'Enkripsi' atau 'Dekripsi'
-
-    Returns:
-        (result_text, steps_log)
-    """
-    text = clean_text(text)
-    key = clean_text(key)
+def rc4_cipher(text, key, mode='Enkripsi'):
     steps = []
-
     if not key:
         key = 'KEY'
-        steps.append("Kunci kosong, menggunakan kunci default 'KEY'.")
+    key_bytes = key.encode('utf-8')
 
-    key_nums = [char_to_num(k) for k in key]
-    steps.append(f"Teks input dibersihkan: '{text}'")
-    steps.append(f"Kunci dibersihkan: '{key}' -> nilai numerik (A=0..Z=25): {key_nums}")
+    if mode == 'Enkripsi':
+        text_bytes = text.encode('utf-8')
+        steps.append(f"Plaintext dikonversi ke bytes: {list(text_bytes)}")
+    else:
+        try:
+            text_bytes = bytes.fromhex(text.replace(" ", ""))
+            steps.append(f"Ciphertext Hex dikonversi ke bytes: {list(text_bytes)}")
+        except ValueError:
+            steps.append("Error: Input dekripsi RC4 harus berupa format Hexadesimal yang valid.")
+            return "ERROR_HEX", steps
 
-    if len(text) == 0:
-        steps.append("Teks kosong setelah dibersihkan, tidak ada yang diproses.")
+    if len(text_bytes) == 0:
         return "", steps
 
-    # ===================== TAHAP 1: KSA =====================
-    S = list(range(26))
-    steps.append("")
-    steps.append("=========== TAHAP 1: KSA (Key Scheduling Algorithm) ===========")
-    steps.append(f"Inisialisasi S-Box awal (0..25): {S}")
-
+    S = list(range(256))
     j = 0
-    for i in range(26):
-        j = (j + S[i] + key_nums[i % len(key_nums)]) % 26
+    for i in range(256):
+        j = (j + S[i] + key_bytes[i % len(key_bytes)]) % 256
         S[i], S[j] = S[j], S[i]
-        steps.append(
-            f"  i={i:2d} : j = (j + S[i] + key[i mod {len(key_nums)}]) mod 26 = {j:2d}  "
-            f"-> tukar S[{i}] <-> S[{j}]"
-        )
-    steps.append(f"S-Box FINAL setelah KSA: {S}")
-
-    # ===================== TAHAP 2: PRGA =====================
-    steps.append("")
-    steps.append("=========== TAHAP 2: PRGA (Pseudo-Random Generation Algorithm) ===========")
-    steps.append("Keystream dibangkitkan per karakter, lalu dikombinasikan dengan teks "
-                  f"menggunakan {'penjumlahan' if mode == 'Enkripsi' else 'pengurangan'} mod 26.")
 
     i = j = 0
-    result = []
-    op_symbol = "+" if mode == 'Enkripsi' else "-"
-
-    for idx, ch in enumerate(text):
-        i = (i + 1) % 26
-        j = (j + S[i]) % 26
+    result_bytes = bytearray()
+    for idx, byte in enumerate(text_bytes):
+        i = (i + 1) % 256
+        j = (j + S[i]) % 256
         S[i], S[j] = S[j], S[i]
-        t = (S[i] + S[j]) % 26
-        ks = S[t]
+        ks = S[(S[i] + S[j]) % 256]
+        c = byte ^ ks
+        result_bytes.append(c)
+        if idx < 50:
+            steps.append(f"  [{idx:02d}] Teks: {byte:02X} | Keystream: {ks:02X} | {byte:02X} ⊕ {ks:02X} = {c:02X}")
+            
+    if mode == 'Enkripsi':
+        result_text = result_bytes.hex().upper()
+        steps.append(f"\nHasil Enkripsi (Hexadesimal): '{result_text}'")
+    else:
+        try:
+            result_text = result_bytes.decode('utf-8')
+            steps.append(f"\nHasil Dekripsi (String): '{result_text}'")
+        except UnicodeDecodeError:
+            result_text = result_bytes.hex().upper()
+            steps.append(f"\n[Peringatan] Gagal decode ke teks. Raw Hex: {result_text}")
 
-        p = char_to_num(ch)
-        if mode == 'Enkripsi':
-            c = (p + ks) % 26
-        else:
-            c = (p - ks) % 26
-        new_ch = num_to_char(c)
-        result.append(new_ch)
-
-        steps.append(
-            f"  [{idx + 1:02d}] '{ch}' | i={i:2d}, j={j:2d}, tukar S[{i}]<->S[{j}], "
-            f"t=(S[i]+S[j])mod26={t:2d}, keystream=S[t]={ks:2d} || "
-            f"({p} {op_symbol} {ks}) mod 26 = {c:02d} -> '{new_ch}'"
-        )
-
-    result_text = ''.join(result)
-    steps.append(f"Hasil akhir: '{result_text}'")
     return result_text, steps
