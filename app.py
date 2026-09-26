@@ -12,7 +12,7 @@ import string
 from algos.caesar import caesar_cipher
 from algos.scytale import scytale_encrypt, scytale_decrypt
 from algos.rc4 import rc4_cipher
-from algos.aes import aes_simple_cipher, sub_byte, _pad
+from algos.aes import aes_simple_cipher
 from algos.super_crypto import super_encrypt, super_decrypt
 from algos.utils import clean_text # Tambahan untuk mengambil fungsi pembersih teks
 from algos.utils import clean_text, char_to_num, num_to_char
@@ -42,7 +42,7 @@ menu = st.sidebar.selectbox(
         "1. Caesar Cipher",
         "2. Scytale Cipher",
         "3. RC4 Cipher",
-        "4. AES Simplified (mod 26)",
+        "4. AES Simplified (32Bit)",
         "5. Super Enkripsi (Gabungan 4 Algoritma)",
     ),
 )
@@ -84,9 +84,6 @@ def show_result(label, result_text):
 # ==========================================================================
 # MENU 1: CAESAR CIPHER
 # ==========================================================================
-# ==========================================================================
-# MENU 1: CAESAR CIPHER
-# ==========================================================================
 if menu.startswith("1"):
     st.header("1️⃣ Caesar Cipher — Substitusi Monoalfabetik")
     st.write(
@@ -109,7 +106,7 @@ if menu.startswith("1"):
             st.warning("Silakan masukkan teks terlebih dahulu.")
         else:
             teks_bersih = clean_text(input_text)
-            
+
             # --- BLOK ANIMASI PITA ALFABET & HASIL SEMENTARA ---
             if gunakan_animasi and teks_bersih:
                 ui_batas = st.empty()
@@ -117,22 +114,22 @@ if menu.startswith("1"):
                 ruang_animasi = st.empty()
                 ui_judul_hasil = st.empty()
                 ruang_hasil_sementara = st.empty()
-                
+
                 ui_batas.write("---")
                 ui_judul_animasi.write("### 🎬 Visualisasi Pita Alfabet:")
                 ui_judul_hasil.write("### 📝 Hasil Sementara:")
-                
+
                 alfabet = list(string.ascii_uppercase)
                 arah_geser = key if mode == "Enkripsi" else -key
                 hasil_sementara = ""
-                
+
                 for char in teks_bersih:
                     indeks_awal = alfabet.index(char)
-                    
+
                     for i in range(abs(arah_geser) + 1):
                         langkah = i if arah_geser > 0 else -i
                         indeks_sekarang = (indeks_awal + langkah) % 26
-                        
+
                         pita_html = "<div style='font-family: monospace; font-size: 20px; text-align: center; padding: 10px; background-color: #262730; color: white; border-radius: 8px;'>"
                         for j, huruf in enumerate(alfabet):
                             if j == indeks_sekarang:
@@ -142,20 +139,20 @@ if menu.startswith("1"):
                             else:
                                 pita_html += f"<span style='padding: 2px; margin: 0 1px;'>{huruf}</span>"
                         pita_html += "</div>"
-                        
+
                         ruang_animasi.markdown(f"Memproses karakter **{char}**...<br>{pita_html}", unsafe_allow_html=True)
-                        
+
                         huruf_berjalan = alfabet[indeks_sekarang]
                         tampilan_hasil = f"<h2 style='font-family: monospace; letter-spacing: 2px;'>{hasil_sementara}<span style='color: #FF4B4B;'>{huruf_berjalan}</span></h2>"
                         ruang_hasil_sementara.markdown(tampilan_hasil, unsafe_allow_html=True)
-                        
-                        time.sleep(0.08) 
-                        
+
+                        time.sleep(0.08)
+
                     hasil_sementara += alfabet[(indeks_awal + arah_geser) % 26]
                     ruang_hasil_sementara.markdown(f"<h2 style='font-family: monospace; letter-spacing: 2px;'>{hasil_sementara}</h2>", unsafe_allow_html=True)
-                    time.sleep(0.2) 
-                
-                time.sleep(0.5) 
+                    time.sleep(0.2)
+
+                time.sleep(0.5)
                 # Bersihkan UI setelah animasi selesai
                 ui_batas.empty(); ui_judul_animasi.empty(); ruang_animasi.empty(); ui_judul_hasil.empty(); ruang_hasil_sementara.empty()
             # --- AKHIR BLOK ANIMASI ---
@@ -190,7 +187,7 @@ elif menu.startswith("2"):
             st.warning("Silakan masukkan teks terlebih dahulu.")
         else:
             teks_bersih = clean_text(input_text)
-            
+
             # --- BLOK ANIMASI MATRIKS SCYTALE & HASIL SEMENTARA ---
             if gunakan_animasi and teks_bersih:
                 import math
@@ -199,19 +196,19 @@ elif menu.startswith("2"):
                 ruang_matriks = st.empty()
                 ui_judul_hasil = st.empty()
                 ruang_hasil_sementara = st.empty()
-                
+
                 ui_batas.write("---")
                 ui_judul_hasil.write("### 📝 Hasil Sementara:")
-                
+
                 cols_anim = int(cols)
                 if cols_anim < 1: cols_anim = 1
                 rows_anim = math.ceil(len(teks_bersih) / cols_anim)
                 pad_len = rows_anim * cols_anim - len(teks_bersih)
-                padded_text = teks_bersih + 'X' * pad_len 
-                
+                padded_text = teks_bersih + 'X' * pad_len
+
                 matriks = [['' for _ in range(cols_anim)] for _ in range(rows_anim)]
                 hasil_sementara = ""
-                
+
                 def render_matriks(m, highlight_r=-1, highlight_c=-1, highlight_color="transparent"):
                     html = "<table style='margin-left: auto; margin-right: auto; text-align: center; font-family: monospace; font-size: 24px; border-collapse: collapse;'>"
                     for r in range(len(m)):
@@ -233,7 +230,7 @@ elif menu.startswith("2"):
                                 matriks[r][c] = padded_text[idx]
                                 ruang_matriks.markdown(render_matriks(matriks, r, c, "#4CAF50"), unsafe_allow_html=True)
                                 idx += 1
-                                time.sleep(0.1) 
+                                time.sleep(0.1)
                 else:
                     for c in range(cols_anim):
                         for r in range(rows_anim):
@@ -242,9 +239,9 @@ elif menu.startswith("2"):
                                 ruang_matriks.markdown(render_matriks(matriks, r, c, "#4CAF50"), unsafe_allow_html=True)
                                 idx += 1
                                 time.sleep(0.1)
-                
+
                 time.sleep(0.5)
-                
+
                 ruang_keterangan.warning("### 🎬 Fase 2: Membaca Matriks (Menghasilkan Teks)...")
                 if mode == "Enkripsi":
                     for c in range(cols_anim):
@@ -254,7 +251,7 @@ elif menu.startswith("2"):
                             ruang_matriks.markdown(render_matriks(matriks, r, c, "#FF4B4B"), unsafe_allow_html=True)
                             tampilan_hasil = f"<h2 style='font-family: monospace; letter-spacing: 2px;'>{hasil_sementara[:-1]}<span style='color: #FF4B4B;'>{char}</span></h2>"
                             ruang_hasil_sementara.markdown(tampilan_hasil, unsafe_allow_html=True)
-                            time.sleep(0.15) 
+                            time.sleep(0.15)
                 else:
                     for r in range(rows_anim):
                         for c in range(cols_anim):
@@ -264,7 +261,7 @@ elif menu.startswith("2"):
                             tampilan_hasil = f"<h2 style='font-family: monospace; letter-spacing: 2px;'>{hasil_sementara[:-1]}<span style='color: #FF4B4B;'>{char}</span></h2>"
                             ruang_hasil_sementara.markdown(tampilan_hasil, unsafe_allow_html=True)
                             time.sleep(0.15)
-                
+
                 time.sleep(0.5)
                 # Bersihkan UI setelah animasi selesai
                 ui_batas.empty(); ruang_keterangan.empty(); ruang_matriks.empty(); ui_judul_hasil.empty(); ruang_hasil_sementara.empty()
@@ -276,7 +273,7 @@ elif menu.startswith("2"):
             else:
                 result, steps = scytale_decrypt(input_text, cols)
                 show_result("Hasil Plaintext", result)
-            
+
             show_steps_animated(steps, animate=gunakan_animasi)
 
 # ==========================================================================
@@ -304,7 +301,7 @@ elif menu.startswith("3"):
             st.warning("Silakan masukkan teks terlebih dahulu.")
         else:
             kunci_bersih = key if key else 'KEY'
-            
+
             # --- BLOK ANIMASI RC4 (256 BYTE) ---
             if gunakan_animasi and input_text:
                 ui_batas = st.empty()
@@ -312,34 +309,34 @@ elif menu.startswith("3"):
                 ruang_prga = st.empty()
                 ui_judul_hasil = st.empty()
                 ruang_hasil_sementara = st.empty()
-                
+
                 ui_batas.write("---")
                 ui_judul_prga.write("### 🎬 Kalkulasi PRGA & XOR")
                 ui_judul_hasil.write("### 📝 Hasil Sementara (Hex):")
-                
+
                 key_bytes = kunci_bersih.encode('utf-8')
                 S = list(range(256))
                 j = 0
                 for i in range(256):
                     j = (j + S[i] + key_bytes[i % len(key_bytes)]) % 256
                     S[i], S[j] = S[j], S[i]
-                
+
                 i_prga = 0
                 j_prga = 0
                 hasil_sementara = ""
-                
+
                 try:
                     text_bytes = input_text.encode('utf-8') if mode == 'Enkripsi' else bytes.fromhex(input_text.replace(" ", ""))
-                    
+
                     for byte in text_bytes[:20]: # Animasi dibatasi 20 byte pertama agar optimal
                         i_prga = (i_prga + 1) % 256
                         j_prga = (j_prga + S[i_prga]) % 256
                         S[i_prga], S[j_prga] = S[j_prga], S[i_prga]
                         ks = S[(S[i_prga] + S[j_prga]) % 256]
-                        
+
                         c = byte ^ ks
                         c_hex = f"{c:02X}"
-                        
+
                         html_prga = f"""
                         <div style='font-family: monospace; font-size: 18px; padding: 15px; background-color: #262730; color: white; border-radius: 8px;'>
                             <span style='color: #87CEFA;'>Byte Input:</span> <b>{byte:02X}</b><br>
@@ -349,12 +346,12 @@ elif menu.startswith("3"):
                         </div>
                         """
                         ruang_prga.markdown(html_prga, unsafe_allow_html=True)
-                        
+
                         hasil_sementara += c_hex + " "
                         tampilan_hasil = f"<h2 style='font-family: monospace; letter-spacing: 2px;'>{hasil_sementara[:-3]}<span style='color: #FF4B4B;'>{c_hex}</span></h2>"
                         ruang_hasil_sementara.markdown(tampilan_hasil, unsafe_allow_html=True)
                         time.sleep(0.15)
-                        
+
                 except ValueError:
                     st.error("Gagal melakukan dekripsi. Pastikan input berupa format Hexadesimal.")
 
@@ -373,8 +370,8 @@ elif menu.startswith("3"):
 elif menu.startswith("4"):
     st.header("4️⃣ AES Simplified — Block Cipher (Byte-Level)")
     st.write(
-        "Beroperasi pada blok 4-byte (32-bit). Menggunakan operasi XOR, "
-        "S-Box 4-bit, dan ShiftRows pada matriks 2x2. "
+        "Beroperasi pada blok 4-byte (32-bit), 3 round: SubBytes, ShiftRows, "
+        "MixColumns (GF(2^8)/XOR), dan AddRoundKey (XOR). "
         "Hasil enkripsi berupa **Hexadesimal**."
     )
 
@@ -393,82 +390,55 @@ elif menu.startswith("4"):
             st.warning("Silakan masukkan teks terlebih dahulu.")
         else:
             kunci_bersih = key if key else "KUNC"
-            
+
             # --- BLOK ANIMASI AES (BYTE-LEVEL) ---
+            # [FIX] Animasi sekarang memanggil aes_simple_cipher() ASLI lewat
+            # callback on_block, bukan reimplementasi manual 1-round tanpa
+            # MixColumns. Ini menjamin animasi & "Hasil Akhir" selalu identik,
+            # karena keduanya berasal dari eksekusi fungsi yang sama persis.
             if gunakan_animasi and input_text:
                 ui_batas = st.empty()
                 ui_judul_proses = st.empty()
                 ruang_matriks = st.empty()
                 ui_judul_hasil = st.empty()
                 ruang_hasil_sementara = st.empty()
-                
+
                 ui_batas.write("---")
-                ui_judul_proses.write("### 🎬 Visualisasi Blok AES (2x2 Byte):")
+                ui_judul_proses.write("### 🎬 Visualisasi Blok AES (3 Round + MixColumns):")
                 ui_judul_hasil.write("### 📝 Hasil Sementara (Hex):")
-                
-                # Persiapan Kunci
-                key_bytes = kunci_bersih.encode('utf-8')
-                key_bytes = (key_bytes * 4)[:4] if len(key_bytes) < 4 else key_bytes[:4]
-                
-                try:
-                    # Persiapan Teks (Padding untuk Enkripsi, Parse Hex untuk Dekripsi)
-                    if mode == 'Enkripsi':
-                        tb = input_text.encode('utf-8')
-                        pad_len = 4 - (len(tb) % 4)
-                        tb += bytes([pad_len] * pad_len) # padding PKCS7 manual
-                    else:
-                        tb = bytes.fromhex(input_text.replace(" ", ""))
-                        
-                    blocks = [list(tb[i:i+4]) for i in range(0, len(tb), 4)]
-                    hasil_sementara = ""
-                    
-                    for b_idx, block in enumerate(blocks):
-                        if mode == 'Enkripsi':
-                            ark = [block[i] ^ key_bytes[i] for i in range(4)]
-                            sb = [sub_byte(x, False) for x in ark]
-                            final_block = [sb[0], sb[1], sb[3], sb[2]]
-                        else:
-                            isr = [block[0], block[1], block[3], block[2]]
-                            isb = [sub_byte(x, True) for x in isr]
-                            final_block = [isb[i] ^ key_bytes[i] for i in range(4)]
-                            
-                        final_hex = bytes(final_block).hex().upper()
-                        
-                        # Render Matriks HTML
-                        html_matriks = f"""
-                        <div style='font-family: monospace; font-size: 16px; padding: 15px; background-color: #262730; color: white; border-radius: 8px;'>
-                            <b>Blok {b_idx + 1} / {len(blocks)}</b><br>
-                            <span style='color: #87CEFA;'>Byte Input:</span> {[f"{x:02X}" for x in block]}<br>
-                            <span style='color: #FFD700;'>Kunci Byte:</span> {[f"{x:02X}" for x in key_bytes]}<br>
-                            <hr style='border-top: 1px dashed #666; margin: 10px 0;'>
-                            <span style='color: #FF4B4B;'>Output Blok (Hex):</span> <b>{final_hex}</b>
-                        </div>
-                        """
-                        ruang_matriks.markdown(html_matriks, unsafe_allow_html=True)
-                        
-                        hasil_sementara += final_hex + " "
-                        tampilan_hasil = f"<h2 style='font-family: monospace; letter-spacing: 2px;'>{hasil_sementara[:-5]}<span style='color: #FF4B4B;'>{final_hex}</span></h2>"
-                        ruang_hasil_sementara.markdown(tampilan_hasil, unsafe_allow_html=True)
-                        
-                        time.sleep(1.0) # Jeda per blok
-                        
-                except ValueError:
-                    st.error("Gagal melakukan dekripsi. Pastikan input berupa format Hexadesimal (contoh: 4F 8A).")
+
+                key_bytes_display = kunci_bersih.encode('utf-8')
+                key_bytes_display = (key_bytes_display * 4)[:4] if len(key_bytes_display) < 4 else key_bytes_display[:4]
+
+                def _on_block_menu4(b_idx, total_blocks, block_in, block_out, running_bytes):
+                    html_matriks = f"""
+                    <div style='font-family: monospace; font-size: 16px; padding: 15px; background-color: #262730; color: white; border-radius: 8px;'>
+                        <b>Blok {b_idx + 1} / {total_blocks}</b><br>
+                        <span style='color: #87CEFA;'>Byte Input:</span> {[f"{x:02X}" for x in block_in]}<br>
+                        <span style='color: #FFD700;'>Kunci Byte:</span> {[f"{x:02X}" for x in key_bytes_display]}<br>
+                        <hr style='border-top: 1px dashed #666; margin: 10px 0;'>
+                        <span style='color: #FF4B4B;'>Output Blok (Hex, setelah 3 round):</span> <b>{''.join(f"{x:02X}" for x in block_out)}</b>
+                    </div>
+                    """
+                    ruang_matriks.markdown(html_matriks, unsafe_allow_html=True)
+                    ruang_hasil_sementara.markdown(
+                        f"<h2 style='font-family: monospace; letter-spacing: 2px; color: #4CAF50;'>{running_bytes.hex().upper()}</h2>",
+                        unsafe_allow_html=True
+                    )
+                    time.sleep(1.0)
+
+                _hasil_animasi, _ = aes_simple_cipher(input_text, key, mode=mode, on_block=_on_block_menu4)
 
                 time.sleep(0.5)
-                # Bersihkan layar animasi
                 ui_batas.empty(); ui_judul_proses.empty(); ruang_matriks.empty(); ui_judul_hasil.empty(); ruang_hasil_sementara.empty()
             # --- AKHIR BLOK ANIMASI ---
 
-            # Menjalankan Logika Asli
+            # Menjalankan Logika Asli (sama persis dengan yang dipakai animasi)
             result, steps = aes_simple_cipher(input_text, key, mode=mode)
             label = "Ciphertext (Hex)" if mode == "Enkripsi" else "Plaintext"
             show_result(f"Hasil Akhir {label}", result)
             show_steps_animated(steps, animate=gunakan_animasi)
 
-# ==========================================================================
-# MENU 5: SUPER ENKRIPSI
-# ==========================================================================
 # ==========================================================================
 # MENU 5: SUPER ENKRIPSI
 # ==========================================================================
@@ -505,13 +475,13 @@ elif menu.startswith("5"):
             st.warning("Silakan masukkan teks terlebih dahulu.")
         else:
             import math
-            
-            # [PERBAIKAN] Jangan jalankan clean_text jika mode Dekripsi agar format Hexadesimal (angka) tidak terhapus!
+
+            # Jangan jalankan clean_text jika mode Dekripsi agar format Hexadesimal (angka) tidak terhapus!
             if mode == "Enkripsi":
                 teks_bersih = clean_text(input_text)
             else:
                 teks_bersih = input_text.replace(" ", "")
-            
+
             # --- BLOK ANIMASI SUPER ENKRIPSI ---
             if gunakan_animasi and teks_bersih:
                 st.write("---")
@@ -519,13 +489,13 @@ elif menu.startswith("5"):
                 ui_animasi1 = st.empty()
                 ui_animasi2 = st.empty()
                 ui_hasil = st.empty()
-                
+
                 current_text = teks_bersih
-                
+
                 if mode == "Enkripsi":
                     tahapan = [
                         ("Caesar Cipher", caesar_cipher, (caesar_key, 'Enkripsi')),
-                        ("Scytale Cipher", scytale_encrypt, (scytale_cols,)), 
+                        ("Scytale Cipher", scytale_encrypt, (scytale_cols,)),
                         ("RC4 Cipher", rc4_cipher, (rc4_key, 'Enkripsi')),
                         ("AES Simplified", aes_simple_cipher, (aes_key, 'Enkripsi'))
                     ]
@@ -536,23 +506,23 @@ elif menu.startswith("5"):
                         ("Scytale Cipher", scytale_decrypt, (scytale_cols,)),
                         ("Caesar Cipher", caesar_cipher, (caesar_key, 'Dekripsi'))
                     ]
-                
+
                 for i, (nama_tahap, fungsi, argumen) in enumerate(tahapan):
                     ui_judul.markdown(f"<h3 style='color:#FFD700;'>⏳ Tahap {i+1}/4 : Memproses {nama_tahap}...</h3>", unsafe_allow_html=True)
                     hasil_sementara = ""
-                    
+
                     # ---------------------------------------------------------
                     # 1. ANIMASI CAESAR CIPHER
                     # ---------------------------------------------------------
                     if nama_tahap == "Caesar Cipher":
                         alfabet = list(string.ascii_uppercase)
                         arah_geser = argumen[0] if argumen[1] == "Enkripsi" else -argumen[0]
-                        
+
                         for char in current_text:
                             if char not in alfabet: continue
                             indeks_awal = alfabet.index(char)
                             indeks_sekarang = (indeks_awal + arah_geser) % 26
-                            
+
                             pita_html = "<div style='font-family: monospace; font-size: 18px; text-align: center; padding: 10px; background-color: #262730; color: white; border-radius: 8px;'>"
                             for j, huruf in enumerate(alfabet):
                                 if j == indeks_sekarang:
@@ -560,12 +530,12 @@ elif menu.startswith("5"):
                                 else:
                                     pita_html += f"<span style='padding: 2px; margin: 0 1px;'>{huruf}</span>"
                             pita_html += "</div>"
-                            
+
                             ui_animasi1.markdown(f"Menggeser **{char}**:<br>{pita_html}", unsafe_allow_html=True)
                             hasil_sementara += alfabet[indeks_sekarang]
                             ui_hasil.markdown(f"<h2 style='font-family: monospace; letter-spacing: 2px; color: #4CAF50;'>{hasil_sementara}</h2>", unsafe_allow_html=True)
                             time.sleep(0.15)
-                            
+
                     # ---------------------------------------------------------
                     # 2. ANIMASI SCYTALE CIPHER
                     # ---------------------------------------------------------
@@ -574,7 +544,7 @@ elif menu.startswith("5"):
                         rows_anim = math.ceil(len(current_text) / cols_anim)
                         padded_text = current_text + 'X' * (rows_anim * cols_anim - len(current_text))
                         matriks = [['' for _ in range(cols_anim)] for _ in range(rows_anim)]
-                        
+
                         def render_matriks(m, hr=-1, hc=-1):
                             html = "<table style='margin: auto; text-align: center; font-family: monospace; font-size: 20px; border-collapse: collapse;'>"
                             for r in range(len(m)):
@@ -619,11 +589,11 @@ elif menu.startswith("5"):
                         for i_idx in range(256):
                             j_anim = (j_anim + S_anim[i_idx] + kunci_rc4_anim[i_idx % len(kunci_rc4_anim)]) % 256
                             S_anim[i_idx], S_anim[j_anim] = S_anim[j_anim], S_anim[i_idx]
-                            
+
                         try:
                             tb = current_text.encode('utf-8') if argumen[1] == 'Enkripsi' else bytes.fromhex(current_text)
                             i_prga = 0; j_prga = 0
-                            
+
                             for byte in tb[:20]:
                                 i_prga = (i_prga + 1) % 256
                                 j_prga = (j_prga + S_anim[i_prga]) % 256
@@ -631,11 +601,11 @@ elif menu.startswith("5"):
                                 ks = S_anim[(S_anim[i_prga] + S_anim[j_prga]) % 256]
                                 c = byte ^ ks
                                 c_hex = f"{c:02X}"
-                                
+
                                 html_prga = f"<div style='font-family: monospace; font-size: 16px; padding: 10px; background-color: #262730; color: white; border-radius: 8px;'>"
                                 html_prga += f"Teks Byte: <b>{byte:02X}</b> | Keystream: <b>{ks:02X}</b> | {byte:02X} ⊕ {ks:02X} = <span style='color: #FF4B4B;'><b>{c_hex}</b></span></div>"
                                 ui_animasi2.markdown(html_prga, unsafe_allow_html=True)
-                                
+
                                 hasil_sementara += c_hex + " "
                                 ui_hasil.markdown(f"<h2 style='font-family: monospace; letter-spacing: 2px; color: #4CAF50;'>{hasil_sementara}</h2>", unsafe_allow_html=True)
                                 time.sleep(0.15)
@@ -643,60 +613,59 @@ elif menu.startswith("5"):
                             st.error("Animasi RC4: Format Hexadesimal tidak valid.")
 
                     # ---------------------------------------------------------
-                    # 4. ANIMASI AES SIMPLIFIED (BYTE-LEVEL)
+                    # 4. ANIMASI AES SIMPLIFIED
+                    # [FIX] Sekarang manggil aes_simple_cipher() ASLI (3 round +
+                    # MixColumns) lewat callback on_block, bukan reimplementasi
+                    # manual 1-round. Animasi & hasil akhir dijamin identik.
                     # ---------------------------------------------------------
                     elif nama_tahap == "AES Simplified":
-                        kunci_aes_anim = argumen[0].encode('utf-8') if argumen[0] else b'KUNC'
-                        kunci_aes_anim = (kunci_aes_anim * 4)[:4] if len(kunci_aes_anim) < 4 else kunci_aes_anim[:4]
-                        
+                        aes_key_arg = argumen[0]
+                        aes_mode_arg = argumen[1]
+
+                        def _on_block_super(b_idx, total_blocks, block_in, block_out, running_bytes):
+                            hex_in = ''.join(f"{x:02X}" for x in block_in)
+                            hex_out = ''.join(f"{x:02X}" for x in block_out)
+                            ui_animasi1.markdown(
+                                f"<div style='padding:15px; background:#262730; border-radius:8px;'>"
+                                f"Blok {b_idx + 1}/{total_blocks} Byte: <b>{hex_in}</b> ➡️ "
+                                f"<span style='color:#FF4B4B;'><b>{hex_out}</b></span></div>",
+                                unsafe_allow_html=True
+                            )
+                            ui_hasil.markdown(
+                                f"<h2 style='font-family: monospace; letter-spacing: 2px; color: #4CAF50;'>"
+                                f"{running_bytes.hex().upper()}</h2>",
+                                unsafe_allow_html=True
+                            )
+                            time.sleep(1.0)
+
                         try:
-                            if argumen[1] == 'Enkripsi':
-                                tb = current_text.encode('utf-8')
-                                pad = 4 - (len(tb) % 4)
-                                tb += bytes([pad] * pad)
-                            else:
-                                tb = bytes.fromhex(current_text)
-                                
-                            blocks = [list(tb[b:b+4]) for b in range(0, len(tb), 4)]
-                            
-                            for b_idx, block in enumerate(blocks):
-                                if argumen[1] == 'Enkripsi':
-                                    ark = [block[x] ^ kunci_aes_anim[x] for x in range(4)]
-                                    sb = [sub_byte(x, False) for x in ark]
-                                    final_nums = [sb[0], sb[1], sb[3], sb[2]]
-                                else:
-                                    isr = [block[0], block[1], block[3], block[2]]
-                                    isb = [sub_byte(x, True) for x in isr]
-                                    final_nums = [isb[x] ^ kunci_aes_anim[x] for x in range(4)]
-                                    
-                                final_hex = bytes(final_nums).hex().upper()
-                                
-                                ui_animasi1.markdown(f"<div style='padding:15px; background:#262730; border-radius:8px;'>Memproses Blok Byte: <b>{[hex(x) for x in block]}</b> ➡️ <span style='color:#FF4B4B;'><b>{final_hex}</b></span></div>", unsafe_allow_html=True)
-                                
-                                hasil_sementara += final_hex + " "
-                                ui_hasil.markdown(f"<h2 style='font-family: monospace; letter-spacing: 2px; color: #4CAF50;'>{hasil_sementara}</h2>", unsafe_allow_html=True)
-                                time.sleep(1.0)
-                        except ValueError:
+                            # current_text menjadi hasil ASLI (hex utk enkripsi,
+                            # teks ter-unpad utk dekripsi) -- sama dengan yang
+                            # dipakai ulang di blok transisi generik di bawah.
+                            hasil_sementara, _ = aes_simple_cipher(
+                                current_text, aes_key_arg, mode=aes_mode_arg, on_block=_on_block_super
+                            )
+                        except Exception:
                             st.error("Animasi AES: Format Hexadesimal tidak valid.")
-                    
+
                     # ---------------------------------------------------------
                     # TRANSISI KE ALGORITMA BERIKUTNYA
                     # ---------------------------------------------------------
-                    time.sleep(1.5) 
-                    
+                    time.sleep(1.5)
+
                     if len(argumen) == 1:
                         current_text, _ = fungsi(current_text, argumen[0])
                     else:
                         current_text, _ = fungsi(current_text, argumen[0], argumen[1])
-                        
-                    # [PERBAIKAN] Hapus padding 'X' saat dekripsi Scytale sebelum diproses animasi Caesar
+
+                    # Hapus padding 'X' saat dekripsi Scytale sebelum diproses animasi Caesar
                     if nama_tahap == "Scytale Cipher" and mode == "Dekripsi":
                         current_text = current_text.rstrip('X')
-                    
+
                     ui_animasi1.empty()
                     ui_animasi2.empty()
                     ui_hasil.empty()
-                
+
                 ui_judul.empty()
             # --- AKHIR BLOK ANIMASI ---
 
@@ -706,7 +675,7 @@ elif menu.startswith("5"):
             else:
                 result, steps = super_decrypt(input_text, caesar_key, scytale_cols, rc4_key, aes_key)
                 show_result("Hasil Akhir Plaintext", result)
-            
+
             show_steps_animated(steps, animate=gunakan_animasi)
 
 # ------------------------------------------------------------------------
