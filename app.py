@@ -41,7 +41,7 @@ menu = st.sidebar.selectbox(
     (
         "1. Caesar Cipher",
         "2. Scytale Cipher",
-        "3. RC4 Cipher (mod 26)",
+        "3. RC4 Cipher",
         "4. AES Simplified (mod 26)",
         "5. Super Enkripsi (Gabungan 4 Algoritma)",
     ),
