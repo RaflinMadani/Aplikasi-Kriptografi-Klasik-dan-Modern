@@ -36,7 +36,12 @@ def super_decrypt(cipher, caesar_key, scytale_cols, rc4_key, aes_key):
     d3, s3 = scytale_decrypt(d2, scytale_cols)
     steps.extend(s3); steps.append(f"### Output Scytale = '{d3}' ###\n")
     
-    d4, s4 = caesar_cipher(d3, caesar_key, mode='Dekripsi')
+    # --- PEMBERSIHAN PADDING SCYTALE SEBELUM MASUK CAESAR ---
+    d3_bersih = d3.rstrip('X')
+    if d3 != d3_bersih:
+        steps.append(f"### Membuang padding 'X' dari Scytale -> '{d3_bersih}' ###\n")
+    
+    d4, s4 = caesar_cipher(d3_bersih, caesar_key, mode='Dekripsi')
     steps.extend(s4); steps.append(f"### Output Caesar = '{d4}' ###\n")
     
     steps.extend(["=" * 70, f"HASIL AKHIR SUPER DEKRIPSI : '{d4}'", "=" * 70])
