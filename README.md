@@ -1,61 +1,31 @@
-# Aplikasi Kriptografi A-Z (Streamlit).
+# Classified E-Voting & Campaign Command System
+Aplikasi e-voting tertutup, client-side murni (HTML5, CSS3, JS ES6), tugas akhir Kriptografi.
 
-Aplikasi web untuk Enkripsi & Dekripsi teks dengan visualisasi langkah-langkah
-proses, dibuat untuk tugas kuliah Kriptografi. Semua algoritma beroperasi
-murni pada 26 huruf alfabet (A-Z).
+## Fitur (7 kriteria)
+| # | Fitur | Algoritma | Berkas |
+|---|---|---|---|
+| 1 | Login 3FA (dongle .key, wajah, PIN) | HMAC/SHA-256, face-api.js (Euclidean <= 0.50) | face-scan.js |
+| 2 | Login hash | PBKDF2-HMAC-SHA256 + salt | crypto.js |
+| 3 | Super-enkripsi suara | Rail Fence (hanya A-Z) + AES-256-GCM | crypto.js |
+| 4 | Enkripsi dokumen calon | RC4 (KSA, PRGA, XOR) + HMAC | file-crypto.js |
+| 5 | Enkripsi basis data | AES-256-GCM per field, IndexedDB | db.js |
+| 6 | Steganografi kartu pemilih | LSB RGB, delimiter 16 bit, PNG | stego.js |
+| 7 | Blockchain log suara | SHA-256 hash chaining + Tamper Block | app.js |
 
-## Struktur Proyek
+## Menjalankan
+Gunakan Chrome/Edge lewat server lokal (bukan file://):
+- `npx http-server .` atau
+- `python -m http.server 8000` atau
+- VS Code Live Server
 
-```
-crypto_app/
-├── app.py                  # UI utama Streamlit
-├── requirements.txt
-└── algos/
-    ├── __init__.py
-    ├── utils.py             # fungsi bersama (clean_text, konversi char<->num)
-    ├── caesar.py            # Menu 1: Caesar Cipher
-    ├── scytale.py           # Menu 2: Scytale Cipher
-    ├── rc4.py                # Menu 3: RC4 Cipher (mod 26)
-    ├── aes.py                 # Menu 4: AES Simplified (mod 26)
-    └── super_crypto.py       # Menu 5: Super Enkripsi (gabungan 4 algoritma)
-```
+Buka `http://localhost:8000`.
 
-## Cara Menjalankan
+## Pengujian
+1. Daftarkan pemilih, buat dongle `.key`, login 3 faktor.
+2. Kirim suara, cek ballot terenkripsi di ledger dan DB Inspector.
+3. Tekan Tamper Block, validasi rantai harus berstatus TAMPERED.
+4. Enkripsi dokumen, ubah 1 byte, dekripsi harus gagal.
+5. Sisipkan token ke kartu PNG, ekstrak kembali.
 
-1. Pastikan Python 3.8+ sudah terpasang.
-2. Masuk ke folder proyek:
-   ```bash
-   cd crypto_app
-   ```
-3. (Opsional tapi disarankan) buat virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate   # Windows: venv\Scripts\activate
-   ```
-4. Install dependensi:
-   ```bash
-   pip install -r requirements.txt
-   ```
-5. Jalankan aplikasi:
-   ```bash
-   streamlit run app.py
-   ```
-6. Browser akan otomatis terbuka di `http://localhost:8501`.
-
-## Catatan Implementasi
-
-- **Pembersihan teks**: semua input diubah ke huruf besar, karakter selain A-Z
-  (spasi, angka, tanda baca) dibuang otomatis.
-- **Caesar Cipher**: substitusi geser, `C = (P + key) mod 26`.
-- **Scytale Cipher**: transposisi matriks baris x kolom (isi baris, baca kolom).
-- **RC4 mod 26**: KSA membangun S-Box 26 elemen dari kunci, PRGA membangkitkan
-  keystream yang dijumlahkan/dikurangkan mod 26 dengan teks.
-- **AES Simplified**: blok 4 karakter, tiap blok melalui AddRoundKey → SubBytes
-  (+3 mod 26) → ShiftRows (rotasi baris matriks 2x2). Dekripsi membalik urutan.
-- **Super Enkripsi**: Caesar → Scytale → RC4 → AES (enkripsi), dan urutan
-  kebalikannya untuk dekripsi. Karena Scytale dan AES menambahkan padding
-  'X', hasil dekripsi bisa memiliki 'X' tambahan di akhir teks — ini normal.
-
-Setiap fungsi algoritma mengembalikan `(result_text, steps_log)` sehingga UI
-bisa menampilkan hasil akhir sekaligus log detail proses di dalam
-`st.expander` untuk keperluan presentasi/penjelasan.
+## Keterbatasan
+Berbasis browser dan IndexedDB, belum layak untuk pemilihan sungguhan. Hash ledger tanpa kunci rahasia, RC4 dipertahankan sebagai mode edukasi.
