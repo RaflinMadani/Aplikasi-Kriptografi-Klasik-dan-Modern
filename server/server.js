@@ -1,60 +1,84 @@
 require('dotenv').config();
 const express = require('express'), mysql = require('mysql2/promise'), crypto = require('crypto'), path = require('path');
 const Layers = require('../shared/layers'), led = require('./ledger');
-const E = process.env, SECRET = E.ELECTION_SECRET || 'dev-secret', BLOCK = +E.BLOCK_SIZE || 3;
+const E = process.env;
+if (E.NODE_ENV === 'production' && ['ADMIN_KEY', 'ELECTION_SECRET', 'NIK_SALT', 'FACE_KEY'].some(k => !E[k])) { console.error('Isi ADMIN_KEY, ELECTION_SECRET, NIK_SALT, FACE_KEY di .env'); process.exit(1); }
+const SECRET = E.ELECTION_SECRET || 'dev-secret', BLOCK = +E.BLOCK_SIZE || 3, ADMIN_KEY = E.ADMIN_KEY || 'dev-admin';
 const PARAMS = { shift: +E.ELECTION_SHIFT || 7, rails: +E.ELECTION_RAILS || 4 };
 const pool = mysql.createPool({ host: E.DB_HOST || 'localhost', user: E.DB_USER || 'root', password: E.DB_PASS || '', database: E.DB_NAME || 'evoting', connectionLimit: 10, timezone: 'Z' });
 const sha = s => crypto.createHash('sha256').update(s).digest('hex');
+const eq = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const NIK_SALT = E.NIK_SALT || 'dev-nik-salt', FK = Buffer.from(sha(E.FACE_KEY || 'dev-face-key'), 'hex');
 const pinHash = (pin, salt) => crypto.pbkdf2Sync(pin, salt, 100000, 32, 'sha256').toString('hex');
 // Descriptor wajah disimpan terenkripsi AES-256-GCM: iv(12) | tag(16) | ciphertext
 const sealFace = d => { const iv = crypto.randomBytes(12), c = crypto.createCipheriv('aes-256-gcm', FK, iv); const ct = Buffer.concat([c.update(JSON.stringify(d)), c.final()]); return Buffer.concat([iv, c.getAuthTag(), ct]).toString('base64'); };
 const openFace = s => { const b = Buffer.from(s, 'base64'), d = crypto.createDecipheriv('aes-256-gcm', FK, b.subarray(0, 12)); d.setAuthTag(b.subarray(12, 28)); return JSON.parse(Buffer.concat([d.update(b.subarray(28)), d.final()])); };
-const faceMatch = (a, b) => Array.isArray(a) && a.length === 128 && Math.sqrt(a.reduce((s, x, i) => s + (x - b[i]) ** 2, 0)) <= 0.5;
+const validDesc = d => Array.isArray(d) && d.length === 128 && d.every(Number.isFinite);
+const faceMatch = (a, b) => validDesc(a) && Math.sqrt(a.reduce((s, x, i) => s + (x - b[i]) ** 2, 0)) <= 0.5;
 
-const app = express(), sessions = new Map();
+const app = express(), sessions = new Map(), adminFails = new Map();
+const newSession = (data, ttl) => { const t = crypto.randomBytes(24).toString('hex'); sessions.set(t, { ...data, exp: Date.now() + ttl }); return t; };
+setInterval(() => sessions.forEach((s, k) => s.exp < Date.now() && sessions.delete(k)), 60e3).unref();
+let chain = Promise.resolve(); // registrasi diserialkan agar cek wajah ganda tidak bisa dibalap
+const serial = fn => { const p = chain.then(fn); chain = p.catch(() => {}); return p; };
+
+app.disable('x-powered-by');
+app.use((_, res, next) => { res.set({ 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer', 'Cache-Control': 'no-store' }); next(); });
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, '../public')));
 app.use('/shared', express.static(path.join(__dirname, '../shared')));
 const wrap = f => (req, res) => f(req, res).catch(e => { console.error(e); res.status(500).json({ error: 'Kesalahan server.' }); });
-const auth = (req, res, next) => {
+const sess = req => sessions.get((req.headers.authorization || '').replace('Bearer ', ''));
+const auth = (req, res, next) => { // khusus pemilih
   const t = (req.headers.authorization || '').replace('Bearer ', ''), s = sessions.get(t);
-  if (!s || s.exp < Date.now()) return res.status(401).json({ error: 'Sesi tidak valid.' });
+  if (!s || s.admin || s.exp < Date.now()) return res.status(401).json({ error: 'Sesi tidak valid.' });
   req.voterId = s.id; req.sessionToken = t; next();
 };
-const admin = (req, res, next) => req.headers['x-admin-key'] === (E.ADMIN_KEY || 'dev-admin') ? next() : res.status(403).json({ error: 'Khusus panitia.' });
+const admin = (req, res, next) => { const s = sess(req); return s && s.admin && s.exp > Date.now() ? next() : res.status(401).json({ error: 'Khusus panitia. Login sebagai admin.' }); };
 
 app.get('/api/candidates', wrap(async (_, res) => res.json((await pool.query('SELECT id, name, vision FROM candidates'))[0])));
 app.get('/api/election', (_, res) => res.json(PARAMS)); // pass AES = token sesi pemilih
 
-app.post('/api/register', wrap(async (req, res) => {
+app.post('/api/register', wrap((req, res) => serial(async () => {
   const { nik, pin, descriptor } = req.body;
-  if (!/^\d{16}$/.test(nik) || !/^\d{4}$/.test(pin) || !Array.isArray(descriptor) || descriptor.length !== 128) return res.status(400).json({ error: 'Data tidak valid.' });
+  if (typeof nik !== 'string' || typeof pin !== 'string' || !/^\d{16}$/.test(nik) || !/^\d{4}$/.test(pin) || !validDesc(descriptor)) return res.status(400).json({ error: 'Data tidak valid.' });
+  // Anti-Sybil: satu wajah hanya boleh satu NIK (Euclidean <= 0.50 terhadap semua descriptor)
+  const [faces] = await pool.query('SELECT face_enc FROM voters');
+  if (faces.some(r => { try { return faceMatch(descriptor, openFace(r.face_enc)); } catch { return false; } })) return res.status(400).json({ error: 'Wajah ini sudah terdaftar pada NIK lain. Registrasi ditolak.' });
   const salt = crypto.randomBytes(16).toString('hex'), token = crypto.randomBytes(32).toString('hex'), code = 'V' + crypto.randomInt(100000, 999999);
   try {
     await pool.query('INSERT INTO voters (voter_code, nik_hash, pin_salt, pin_hash, token_hash, face_enc) VALUES (?,?,?,?,?,?)',
       [code, sha(NIK_SALT + nik), salt, pinHash(pin, salt), sha(token), sealFace(descriptor)]);
   } catch (e) { if (e.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'NIK sudah terdaftar.' }); throw e; }
-  res.json({ voterCode: code, token }); // token ditanam ke kartu pemilih (DCT) di sisi klien
-}));
+  res.json({ voterCode: code, token });
+})));
 
 app.post('/api/login', wrap(async (req, res) => {
-  const { voterCode, pin, token, descriptor, sim } = req.body;
-  const [[v]] = await pool.query('SELECT * FROM voters WHERE voter_code = ?', [String(voterCode)]);
-  const fail = () => res.status(401).json({ error: 'Autentikasi gagal.' });
+  const { voterCode, pin, token, descriptor, sim } = req.body, fail = () => res.status(401).json({ error: 'Autentikasi gagal.' });
+  if (typeof voterCode !== 'string' || typeof pin !== 'string' || typeof token !== 'string' || !/^V\d{6}$/.test(voterCode) || !/^\d{4}$/.test(pin) || !/^[0-9a-f]{64}$/.test(token)) return fail();
+  const [[v]] = await pool.query('SELECT * FROM voters WHERE voter_code = ?', [voterCode]);
   if (!v || v.failed_attempts >= 5) return fail();
   const faceOk = (sim === true && E.ALLOW_FACE_SIM === 'true') || faceMatch(descriptor, openFace(v.face_enc));
-  if (!(pinHash(String(pin), v.pin_salt) === v.pin_hash && sha(String(token)) === v.token_hash && faceOk)) {
+  if (!(eq(pinHash(pin, v.pin_salt), v.pin_hash) && eq(sha(token), v.token_hash) && faceOk)) {
     await pool.query('UPDATE voters SET failed_attempts = failed_attempts + 1 WHERE id = ?', [v.id]); return fail();
   }
   await pool.query('UPDATE voters SET failed_attempts = 0 WHERE id = ?', [v.id]);
-  const s = crypto.randomBytes(24).toString('hex'); sessions.set(s, { id: v.id, exp: Date.now() + 15 * 60e3 });
-  res.json({ session: s, hasVoted: !!v.has_voted });
+  res.json({ session: newSession({ id: v.id }, 15 * 60e3), hasVoted: !!v.has_voted });
 }));
+
+app.post('/api/admin/login', (req, res) => { // login panitia: sesi 30 menit, 5 gagal = blok 5 menit per IP
+  const a = adminFails.get(req.ip) || { n: 0, until: 0 };
+  if (a.until > Date.now()) return res.status(429).json({ error: 'Terlalu banyak percobaan. Coba lagi beberapa menit.' });
+  if (typeof req.body.key !== 'string' || !eq(sha(req.body.key), sha(ADMIN_KEY))) {
+    if (++a.n >= 5) { a.until = Date.now() + 300e3; a.n = 0; } adminFails.set(req.ip, a);
+    return res.status(401).json({ error: 'Kunci panitia salah.' });
+  }
+  adminFails.delete(req.ip); res.json({ session: newSession({ admin: true }, 30 * 60e3) });
+});
 
 app.post('/api/vote', auth, wrap(async (req, res) => {
   let cid;
-  try { cid = Number(JSON.parse(await Layers.superDecrypt(req.body.ballot, { ...PARAMS, pass: req.sessionToken })).candidateId); }
+  try { cid = Number(JSON.parse(await Layers.superDecrypt(String(req.body.ballot), { ...PARAMS, pass: req.sessionToken })).candidateId); }
   catch { return res.status(400).json({ error: 'Ballot tidak valid.' }); }
   const conn = await pool.getConnection();
   try {
@@ -71,7 +95,7 @@ app.post('/api/vote', auth, wrap(async (req, res) => {
   } catch (e) { await conn.rollback(); throw e; } finally { conn.release(); }
 }));
 
-// Panitia: dashboard dihitung dari blok yang sudah tersegel
+// ----- Panitia -----
 app.get('/api/admin/results', admin, wrap(async (_, res) => {
   const conn = await pool.getConnection();
   try {
@@ -81,26 +105,29 @@ app.get('/api/admin/results', admin, wrap(async (_, res) => {
   } finally { conn.release(); }
 }));
 app.post('/api/admin/seal', admin, wrap(async (_, res) => { const c = await pool.getConnection(); try { await led.ensureGenesis(c); res.json({ sealedBlock: await led.sealIfReady(c, 1) }); } finally { c.release(); } }));
-app.post('/api/admin/tamper', admin, wrap(async (req, res) => { // demo Tamper Detection
-  await pool.query("UPDATE ledger_blocks SET tx_json = JSON_ARRAY('forged') WHERE idx = ?", [+req.body.idx || 1]); res.json({ ok: true });
-}));
-
-// Brankas dokumen: server hanya menyimpan blob .secure (enkripsi terjadi di browser)
-app.use('/api/docs', express.raw({ type: 'application/octet-stream', limit: '12mb' }));
-app.post('/api/docs', admin, wrap(async (req, res) => {
-  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'Berkas kosong.' });
-  const name = decodeURIComponent(req.headers['x-file-name'] || 'dokumen.secure').slice(0, 255);
-  const [r] = await pool.query('INSERT INTO campaign_docs (name, size, data) VALUES (?,?,?)', [name, req.body.length, req.body]);
-  res.json({ id: r.insertId });
-}));
-app.get('/api/docs', admin, wrap(async (_, res) => res.json((await pool.query('SELECT id, name, size, created_at FROM campaign_docs ORDER BY id DESC'))[0])));
-app.get('/api/docs/:id', admin, wrap(async (req, res) => {
-  const [[d]] = await pool.query('SELECT data FROM campaign_docs WHERE id = ?', [+req.params.id]);
-  if (!d) return res.status(404).json({ error: 'Tidak ditemukan.' });
-  res.type('application/octet-stream').send(d.data);
+app.post('/api/admin/tamper', admin, wrap(async (req, res) => { // demo Tamper Detection; matikan dengan ALLOW_TAMPER_DEMO=false
+  if (E.ALLOW_TAMPER_DEMO === 'false') return res.status(403).json({ error: 'Demo tamper dimatikan.' });
+  await pool.query("UPDATE ledger_blocks SET tx_json = JSON_ARRAY('forged') WHERE idx = ?", [Math.max(1, Math.trunc(+req.body.idx) || 1)]); res.json({ ok: true });
 }));
 app.get('/api/admin/blocks', admin, wrap(async (_, res) => {
   const [b] = await pool.query('SELECT idx, ts, merkle_root, prev_hash, hash, JSON_LENGTH(tx_json) AS tx FROM ledger_blocks ORDER BY idx'); res.json(b);
 }));
+
+// Brankas dokumen: server hanya menyimpan blob .secure (enkripsi di browser); format RC4S divalidasi
+app.use('/api/docs', express.raw({ type: 'application/octet-stream', limit: '12mb' }));
+app.post('/api/docs', admin, wrap(async (req, res) => {
+  const b = req.body;
+  if (!Buffer.isBuffer(b) || b.length < 53 || b.subarray(0, 4).toString('latin1') !== 'RC4S') return res.status(400).json({ error: 'Bukan berkas .secure yang valid.' });
+  const name = decodeURIComponent(String(req.headers['x-file-name'] || 'dokumen.secure')).replace(/[\\/]/g, '_').slice(0, 255);
+  const [r] = await pool.query('INSERT INTO campaign_docs (name, size, data) VALUES (?,?,?)', [name, b.length, b]);
+  res.json({ id: r.insertId });
+}));
+app.get('/api/docs', admin, wrap(async (_, res) => res.json((await pool.query('SELECT id, name, size, created_at FROM campaign_docs ORDER BY id DESC'))[0])));
+app.get('/api/docs/:id', admin, wrap(async (req, res) => {
+  const [[d]] = await pool.query('SELECT data FROM campaign_docs WHERE id = ?', [+req.params.id || 0]);
+  if (!d) return res.status(404).json({ error: 'Tidak ditemukan.' });
+  res.type('application/octet-stream').send(d.data);
+}));
+app.use((err, _req, res, _next) => res.status(400).json({ error: 'Permintaan tidak valid.' }));
 
 app.listen(E.PORT || 3000, () => console.log('E-Voting server di http://localhost:' + (E.PORT || 3000)));
