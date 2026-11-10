@@ -30,6 +30,14 @@ CREATE TABLE ledger_blocks (
   tx_json JSON NOT NULL                     -- daftar hash pilihan (acak urutan)
 );
 
+CREATE TABLE IF NOT EXISTS campaign_docs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    size INT NOT NULL,
+    data LONGBLOB NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- has_voted terkunci permanen: tidak boleh kembali ke 0
 DELIMITER $$
 CREATE TRIGGER trg_lock_has_voted BEFORE UPDATE ON voters
