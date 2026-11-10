@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Classified E-Voting &amp; Campaign Command</title><link rel="stylesheet" href="css/app.css"></head><body>
+<aside><h1>Classified E-Voting</h1>
+<nav id="nav" class="locked">
+ <button data-t="gate">Gatekeeper</button><button data-t="vote">Surat Suara</button><button data-t="text">Super-Enkripsi Teks</button>
+ <button data-t="file">File Vault</button><button data-t="stego">Steganografi DCT</button><button data-t="dash">Command Dashboard</button>
+</nav><div id="who">Terkunci</div></aside>
+<main>
+<section id="gate"><h2>Gatekeeper</h2>
+ <div class="card"><h3>Kamera</h3><div class="cam"><video id="cam" muted playsinline></video><canvas id="camOverlay"></canvas></div><div class="row" style="margin-top:8px"><button class="go alt" id="btnCam">Nyalakan kamera</button></div></div>
+ <div class="card"><h3>Daftar pemilih baru</h3><div class="row"><input id="regNik" inputmode="numeric" maxlength="16" placeholder="NIK 16 digit"><input id="regPin" type="password" inputmode="numeric" maxlength="4" placeholder="PIN 4 digit"><button class="go" id="btnReg">Rekam wajah &amp; buat dongle</button></div><p class="msg" id="msgReg"></p></div>
+ <div class="card"><h3>Login 3 faktor</h3>
+  <div class="row"><button class="go alt" id="btnUsb">1. Pilih flashdisk</button><span class="mut">atau unggah</span><input type="file" id="keyFile" accept=".key"></div>
+  <div class="row" style="margin-top:8px"><input id="loginPin" type="password" inputmode="numeric" maxlength="4" placeholder="2. PIN"><label class="mut"><input type="checkbox" id="faceSim"> Simulasi wajah (jika server mengizinkan)</label><button class="go" id="btnLogin">3. Pindai wajah &amp; masuk</button></div>
+  <p class="msg" id="msgLogin"></p></div></section>
+<section id="vote"><h2>Surat Suara</h2><div class="card"><div id="candList"></div><button class="go" id="btnVote">Kirim suara</button><p class="msg" id="msgVote"></p><div id="voteTrace"></div></div></section>
+<section id="text"><h2>Super-Enkripsi Teks</h2>
+ <div class="card"><textarea id="txtIn" placeholder="Teks asli"></textarea>
+  <div class="row" style="margin-top:8px"><label class="mut">Geser Caesar <input id="txtShift" type="number" value="7" style="width:70px"></label><label class="mut">Rel <input id="txtRails" type="number" min="2" value="4" style="width:70px"></label><input id="txtPass" type="password" placeholder="Kunci AES"><button class="go" id="btnTxtEnc">Enkripsi</button></div>
+  <p class="msg" id="msgTxt"></p><div id="txtTrace"></div></div>
+ <div class="card"><h3>Dekripsi</h3><textarea id="txtPkg" placeholder="Paket Base64"></textarea><button class="go" id="btnTxtDec" style="margin-top:8px">Dekripsi (pakai geser, rel, kunci di atas)</button><p class="msg" id="msgTxtDec"></p></div></section>
+<section id="file"><h2>File Vault (.secure)</h2>
+ <div class="card"><div class="row"><input type="file" id="fileIn"><input id="filePass" type="password" placeholder="Kunci (min 6)"><button class="go" id="btnSecEnc">Enkripsi &amp; unduh</button><button class="go alt" id="btnSecSave">Simpan ke server</button></div><p class="msg" id="msgFile"></p><div id="fileTrace"></div></div>
+ <div class="card"><h3>Dekripsi</h3><div class="row"><input type="file" id="secIn" accept=".secure"><input id="secPass" type="password" placeholder="Kunci"><button class="go" id="btnSecDec">Verifikasi &amp; dekripsi</button></div><p class="msg" id="msgSecDec"></p><div id="decTrace"></div></div>
+ <div class="card"><h3>Dokumen di server (panitia)</h3><button class="go alt" id="btnDocs">Muat daftar</button><div id="docList"></div></div></section>
+<section id="stego"><h2>Steganografi DCT</h2>
+ <div class="card"><div class="row"><input type="file" id="imgIn" accept="image/*"><button class="go" id="btnEmbed">Sisipkan &amp; unduh PNG</button><button class="go alt" id="btnExtract">Ekstrak pesan</button></div>
+  <textarea id="stegoMsg" placeholder="Pesan (otomatis terisi token kartu pemilih)" style="margin-top:8px"></textarea><p class="msg" id="msgStego"></p></div></section>
+<section id="dash"><h2>Campaign Command Dashboard</h2>
+ <div class="card"><div class="row"><input id="adminKey" type="password" placeholder="Kunci panitia"><button class="go" id="btnDash">Muat</button><label class="mut"><input type="checkbox" id="autoDash"> Auto-refresh 5 dtk</label><button class="go alt" id="btnSeal">Segel suara tertunda</button><button class="go alt" id="btnTamper">Tamper blok 1 (demo)</button></div><p class="msg" id="msgDash"></p>
+  <div class="stats" id="dashStat"></div><canvas id="chart" height="110" style="margin-top:12px"></canvas><h3>Blok ledger</h3><div id="blocks"></div></div></section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/dist/face-api.js"></script>
+<script src="/shared/layers.js"></script><script src="js/dct-stego.js"></script><script src="js/face.js"></script><script src="js/dongle.js"></script><script src="js/file-crypto.js"></script><script src="js/app.js"></script>
+</body></html>
