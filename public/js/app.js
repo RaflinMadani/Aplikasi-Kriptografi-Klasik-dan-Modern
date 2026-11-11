@@ -86,7 +86,10 @@ function show(t) {
   document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === t));
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
 }
-document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.dataset.t));
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  show(b.dataset.t);
+  if (b.dataset.t === 'vote') refreshVoteSection();
+});
 
 // ----- pembersihan state total -----
 function resetGate() {
@@ -104,7 +107,7 @@ function clearWork() {
   ['txtIn', 'txtPkg', 'txtPass', 'fileIn', 'filePass', 'secIn', 'secPass', 'imgIn', 'stegoMsg', 'stegoOut'].forEach(i => { $(i).value = ''; });
   ['txtTrace', 'txtDecTrace', 'fileTrace', 'decTrace', 'docList', 'dashStat', 'blocks', 'statusBox', 'statusTrace', 'candList'].forEach(i => { $(i).innerHTML = ''; });
   ['msgTxt', 'msgTxtDec', 'msgFile', 'msgSecDec', 'msgStego', 'msgDash', 'msgVote'].forEach(i => { $(i).textContent = ''; $(i).className = 'msg'; });
-  chart?.destroy(); chart = null; clearInterval(dashTimer); $('autoDash').checked = false; lastSecure = null; $('btnVote').disabled = false;
+  chart?.destroy(); chart = null; clearInterval(dashTimer); $('autoDash').checked = false; lastSecure = null; $('btnVote').disabled = !!S.voted;
 }
 function lock(reason, ok = false) {
   clearTimeout(S.idle); stopCamera($('cam'));
@@ -213,7 +216,7 @@ $('btnLogin').onclick = async () => {
     // Hentikan polling gate, mulai guard sesi
     clearInterval(usbScanTimer); usbScanTimer = null;
     startSession(); renderStatus(); toast('Login 3 faktor berhasil.');
-    if (S.voted) show('status'); else { await loadCandidates(); show('vote'); }
+    if (S.voted) { refreshVoteSection(); show('status'); } else { $('btnVote').hidden = false; await loadCandidates(); show('vote'); }
   } catch (e) {
     if (e.retryAfterSeconds) {
       showLockModal(e.retryAfterSeconds);
@@ -281,6 +284,11 @@ async function loadCandidates() {
   const c = await api('/api/candidates'); $('btnVote').disabled = false;
   $('candList').innerHTML = c.map(x => `<label class="opt"><input type="radio" name="cand" value="${x.id}"><span><b>${esc(x.name)}</b><br><span class="mut">${esc(x.vision || '')}</span></span></label>`).join('');
 }
+function refreshVoteSection() {
+  if (!S.voted) return;
+  $('candList').innerHTML = '<p class="mut">Anda sudah memilih. Lihat halaman <b>Status Pemilih</b> untuk detail.</p>';
+  $('btnVote').hidden = true;
+}
 function renderStatus() {
   $('statusBox').innerHTML = '<h3>Ringkasan akun</h3>' + table(['Item', 'Nilai'], [['NIK', S.nik], ['Kode pemilih', S.voter], ['Autentikasi', 'Dongle + PIN + Wajah (3FA)'],
     ['Status suara', S.voted ? 'SUDAH MEMILIH (terkunci permanen)' : 'Belum memilih'], ['Waktu mencatat', S.votedAt ? S.votedAt.toLocaleString() : '-'],
@@ -292,7 +300,7 @@ $('btnVote').onclick = guard('msgVote', async () => {
   const plain = JSON.stringify({ candidateId: +c.value }), r = await Layers.superEncrypt(plain, { ...S.params, pass: S.session });
   const res = await api('/api/vote', { method: 'POST', body: { ballot: r.package } });
   Object.assign(S, { voted: true, votedAt: new Date(), block: res.sealedBlock });
-  $('btnVote').disabled = true; $('candList').innerHTML = ''; say('msgVote', 'Anda sudah memilih.');
+  $('btnVote').disabled = true; $('btnVote').hidden = true; $('candList').innerHTML = ''; say('msgVote', 'Anda sudah memilih.');
   updateAcct(); renderStatus(); renderLayers($('statusTrace'), plain, r, S.params.shift, S.params.rails);
   toast('Suara terenkripsi 3 lapis dan tercatat.'); show('status');
 });
