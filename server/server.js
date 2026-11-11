@@ -50,13 +50,14 @@ const openFace = (s) => {
   d.setAuthTag(b.subarray(12, 28));
   return JSON.parse(Buffer.concat([d.update(b.subarray(28)), d.final()]));
 };
-const FACE_THRESHOLD = Number(E.FACE_THRESHOLD) || 0.40;
+const FACE_THRESHOLD = Number(E.FACE_THRESHOLD) || 0.5;
 const validDesc = (d) =>
   Array.isArray(d) && d.length === 128 && d.every(Number.isFinite);
 
 function faceDistance(a, b) {
   if (!validDesc(a) || !validDesc(b)) return Infinity;
-  let normA = 0, normB = 0;
+  let normA = 0,
+    normB = 0;
   for (let i = 0; i < 128; i++) {
     normA += a[i] * a[i];
     normB += b[i] * b[i];
@@ -67,7 +68,7 @@ function faceDistance(a, b) {
 
   let sumSq = 0;
   for (let i = 0; i < 128; i++) {
-    const diff = (a[i] / normA) - (b[i] / normB);
+    const diff = a[i] / normA - b[i] / normB;
     sumSq += diff * diff;
   }
   return Math.sqrt(sumSq);
@@ -85,32 +86,56 @@ const app = express(),
 // USB presence lock (Windows): fail-closed if the registered removable drive is absent.
 const DONGLE_REQUIRED = E.DONGLE_REQUIRED !== "false";
 const DONGLE_ID = E.DONGLE_ID || "";
-const DONGLE_VOLUME_SERIAL = (E.DONGLE_VOLUME_SERIAL || "").replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
+const DONGLE_VOLUME_SERIAL = (E.DONGLE_VOLUME_SERIAL || "")
+  .replace(/[^0-9A-Fa-f]/g, "")
+  .toUpperCase();
 const DONGLE_MARKER = ".evoting-dongle";
 let donglePresent = !DONGLE_REQUIRED;
 let dongleCheckRunning = false;
 
 async function findRegisteredUsb() {
   if (!DONGLE_REQUIRED) return true;
-  if (process.platform !== "win32" || !DONGLE_ID || !DONGLE_VOLUME_SERIAL) return false;
+  if (process.platform !== "win32" || !DONGLE_ID || !DONGLE_VOLUME_SERIAL)
+    return false;
 
   // Only partitions on disks whose Windows BusType is USB are considered. The serial and marker
   // must both match. This is a practical presence check, not tamper-proof hardware.
-  const ps = "$ErrorActionPreference='Stop'; Get-Partition | Where-Object { $_.DriveLetter } | ForEach-Object { $p=$_; $d=Get-Disk -Number $p.DiskNumber; if ($d.BusType -eq 'USB') { $l=Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DeviceID -eq ($p.DriveLetter+':') }; if ($l) { [pscustomobject]@{ DeviceID=$l.DeviceID; VolumeSerialNumber=$l.VolumeSerialNumber } } } } | ConvertTo-Json -Compress";
+  const ps =
+    "$ErrorActionPreference='Stop'; Get-Partition | Where-Object { $_.DriveLetter } | ForEach-Object { $p=$_; $d=Get-Disk -Number $p.DiskNumber; if ($d.BusType -eq 'USB') { $l=Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DeviceID -eq ($p.DriveLetter+':') }; if ($l) { [pscustomobject]@{ DeviceID=$l.DeviceID; VolumeSerialNumber=$l.VolumeSerialNumber } } } } | ConvertTo-Json -Compress";
   try {
-    const { stdout } = await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps], { windowsHide: true, timeout: 4000, maxBuffer: 1024 * 1024 });
+    const { stdout } = await execFileAsync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        ps,
+      ],
+      { windowsHide: true, timeout: 4000, maxBuffer: 1024 * 1024 },
+    );
     if (!stdout.trim()) return false;
     const parsed = JSON.parse(stdout.trim());
     const drives = Array.isArray(parsed) ? parsed : [parsed];
     for (const drive of drives) {
-      const serial = String(drive.VolumeSerialNumber || "").replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
+      const serial = String(drive.VolumeSerialNumber || "")
+        .replace(/[^0-9A-Fa-f]/g, "")
+        .toUpperCase();
       if (serial !== DONGLE_VOLUME_SERIAL) continue;
       const root = String(drive.DeviceID || "");
       if (!/^[A-Z]:$/i.test(root)) continue;
       try {
-        const marker = (await fs.promises.readFile(path.join(root + "\\", DONGLE_MARKER), "utf8")).trim();
+        const marker = (
+          await fs.promises.readFile(
+            path.join(root + "\\", DONGLE_MARKER),
+            "utf8",
+          )
+        ).trim();
         if (marker === DONGLE_ID) return true;
-      } catch { /* drive removed or marker unavailable */ }
+      } catch {
+        /* drive removed or marker unavailable */
+      }
     }
     return false;
   } catch (err) {
@@ -127,9 +152,12 @@ async function refreshDongleState() {
     const present = await findRegisteredUsb();
     if (donglePresent && !present) {
       sessions.clear(); // revoke voter and admin sessions immediately on detected removal
-      console.warn("USB dongle dicabut: seluruh sesi dihapus dan aplikasi dikunci.");
+      console.warn(
+        "USB dongle dicabut: seluruh sesi dihapus dan aplikasi dikunci.",
+      );
     }
-    if (!donglePresent && present) console.log("USB dongle valid terdeteksi: aplikasi dibuka kembali.");
+    if (!donglePresent && present)
+      console.log("USB dongle valid terdeteksi: aplikasi dibuka kembali.");
     donglePresent = present;
   } finally {
     dongleCheckRunning = false;
@@ -140,7 +168,10 @@ if (DONGLE_REQUIRED) {
   // Initial state is locked until the first successful hardware check.
   donglePresent = false;
   refreshDongleState();
-  const watcher = setInterval(refreshDongleState, Math.max(1000, Number(E.DONGLE_POLL_MS) || 1500));
+  const watcher = setInterval(
+    refreshDongleState,
+    Math.max(1000, Number(E.DONGLE_POLL_MS) || 1500),
+  );
   watcher.unref();
 }
 
@@ -176,9 +207,16 @@ app.use((req, res, next) => {
   if (!DONGLE_REQUIRED || donglePresent) return next();
   res.set("Retry-After", "3");
   if (req.path.startsWith("/api/")) {
-    return res.status(423).json({ error: "Aplikasi terkunci: USB security dongle tidak terdeteksi." });
+    return res.status(423).json({
+      error: "Aplikasi terkunci: USB security dongle tidak terdeteksi.",
+    });
   }
-  return res.status(423).type("html").send(`<!doctype html><html lang="id"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Aplikasi Terkunci</title><style>body{font:16px system-ui;background:#101827;color:#eef2ff;display:grid;min-height:100vh;place-items:center;margin:0}.box{max-width:520px;padding:32px;border:1px solid #334155;border-radius:16px;background:#182235;text-align:center}h1{font-size:24px}.muted{color:#aab6ca}</style><main class="box"><h1>🔒 Aplikasi Terkunci</h1><p>USB security dongle tidak terdeteksi atau tidak valid.</p><p class="muted">Pasang flashdisk yang sudah didaftarkan. Halaman ini akan memeriksa ulang secara otomatis.</p></main><script>setTimeout(()=>location.reload(),3000)</script></html>`);
+  return res
+    .status(423)
+    .type("html")
+    .send(
+      `<!doctype html><html lang="id"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Aplikasi Terkunci</title><style>body{font:16px system-ui;background:#101827;color:#eef2ff;display:grid;min-height:100vh;place-items:center;margin:0}.box{max-width:520px;padding:32px;border:1px solid #334155;border-radius:16px;background:#182235;text-align:center}h1{font-size:24px}.muted{color:#aab6ca}</style><main class="box"><h1>🔒 Aplikasi Terkunci</h1><p>USB security dongle tidak terdeteksi atau tidak valid.</p><p class="muted">Pasang flashdisk yang sudah didaftarkan. Halaman ini akan memeriksa ulang secara otomatis.</p></main><script>setTimeout(()=>location.reload(),3000)</script></html>`,
+    );
 });
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "../public")));
@@ -241,12 +279,9 @@ app.post(
           }
         })
       )
-        return res
-          .status(400)
-          .json({
-            error:
-              "Wajah ini sudah terdaftar pada NIK lain. Registrasi ditolak.",
-          });
+        return res.status(400).json({
+          error: "Wajah ini sudah terdaftar pada NIK lain. Registrasi ditolak.",
+        });
       const salt = crypto.randomBytes(16).toString("hex"),
         token = crypto.randomBytes(32).toString("hex"),
         code = "V" + crypto.randomInt(100000, 999999);
@@ -276,7 +311,8 @@ app.post(
   "/api/login",
   wrap(async (req, res) => {
     const { voterCode, pin, token, descriptor, sim } = req.body,
-      fail = (msg = "Autentikasi gagal.") => res.status(401).json({ error: msg });
+      fail = (msg = "Autentikasi gagal.") =>
+        res.status(401).json({ error: msg });
     if (
       typeof voterCode !== "string" ||
       typeof pin !== "string" ||
@@ -305,7 +341,7 @@ app.post(
     const faceOk = simAllowed || faceMatched;
 
     console.log(
-      `[AUTH] Login voter ${voterCode}: distance=${isFinite(dist) ? dist.toFixed(4) : dist}, threshold=${FACE_THRESHOLD}, sim=${simAllowed} -> ${faceOk ? "PASS" : "FAIL"}`
+      `[AUTH] Login voter ${voterCode}: distance=${isFinite(dist) ? dist.toFixed(4) : dist}, threshold=${FACE_THRESHOLD}, sim=${simAllowed} -> ${faceOk ? "PASS" : "FAIL"}`,
     );
 
     const pinOk = eq(pinHash(pin, v.pin_salt), v.pin_hash);
@@ -318,7 +354,7 @@ app.post(
       );
       if (pinOk && tokenOk && !faceOk) {
         console.warn(
-          `[AUTH] Login ditolak untuk ${voterCode}: wajah tidak cocok (jarak: ${dist.toFixed(4)} > ${FACE_THRESHOLD}).`
+          `[AUTH] Login ditolak untuk ${voterCode}: wajah tidak cocok (jarak: ${dist.toFixed(4)} > ${FACE_THRESHOLD}).`,
         );
         return fail("Wajah tidak cocok dengan data pemilih terdaftar.");
       }

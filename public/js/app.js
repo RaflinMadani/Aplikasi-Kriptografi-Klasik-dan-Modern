@@ -36,7 +36,7 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.da
 // ----- pembersihan state total -----
 function resetGate() {
   ['regNik', 'regPin', 'loginPin', 'adminKey'].forEach(i => { $(i).value = ''; });
-  $('keyFile').value = ''; $('faceSim').checked = false; $('dongleName').textContent = '';
+  $('keyFile').value = ''; $('dongleName').textContent = '';
   ['msgReg', 'msgLogin', 'msgAdmin'].forEach(i => { $(i).textContent = ''; $(i).className = 'msg'; });
 }
 function clearWork() {
@@ -79,8 +79,8 @@ $('btnLogin').onclick = guard('msgLogin', async () => {
   const f = $('keyFile').files[0]; if (!f) throw new Error('Pilih berkas dongle .key dulu.');
   const d = await readDongleFile(f), pin = $('loginPin').value; // dibaca ulang setiap login: tidak ada cache lama
   if (!/^\d{4}$/.test(pin)) throw new Error('PIN harus 4 digit.');
-  const sim = $('faceSim').checked, descriptor = sim ? null : await scan('msgLogin', 4);
-  const r = await api('/api/login', { method: 'POST', body: { voterCode: d.rec.voterCode, pin, token: d.rec.token, descriptor, sim } });
+  const descriptor = await scan('msgLogin', 4);
+  const r = await api('/api/login', { method: 'POST', body: { voterCode: d.rec.voterCode, pin, token: d.rec.token, descriptor } });
   Object.assign(S, { session: r.session, role: 'voter', voter: d.rec.voterCode, nik: d.rec.nikMask || '(tidak ada di dongle)', voted: r.hasVoted });
   S.params = await api('/api/election');
   startSession(); renderStatus(); toast('Login 3 faktor berhasil.');
