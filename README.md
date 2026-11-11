@@ -58,12 +58,18 @@ Server menolak berjalan dengan `NODE_ENV=production` jika empat rahasia di atas 
 
 Pemilih hanya melihat dua menu setelah login: **Surat Suara** dan **Status Pemilih**.
 
-- **Gatekeeper**: daftar akun (NIK, PIN, rekam wajah). Dongle `.key` diunduh otomatis ke folder Downloads — **salin ke USB Flashdisk** agar bisa digunakan untuk login.
+- **Gatekeeper**: daftar akun (NIK, PIN, rekam wajah). Dongle `.key` diunduh otomatis ke folder Downloads — **salin ke USB Dongle** agar bisa digunakan untuk login.
 - **Login 3 faktor (Otomatis dari USB)**: tancapkan USB yang berisi `dongle-Vxxxxxx.key`, sistem mendeteksi otomatis, lalu masukkan PIN dan pindai wajah.
 - **Surat Suara**: memilih satu kandidat. Suara dienkripsi tiga lapis di browser, lalu dikirim. Pemilih hanya bisa memilih sekali.
 - **Status Pemilih**: menampilkan NIK tersamar, kode pemilih, status memilih, waktu pencatatan, dan nomor blok ledger. Pilihan tidak ditampilkan karena ledger tidak menyimpan identitas.
 
 ### Panitia (Admin)
+
+- Untuk mendapatkan `dongle-ADMIN.key`, setting di `server/.env` bagian `NODE_ENV` menjadi development.
+- Buka `http://localhost:3000/api/admin/generate-dongle` dan unduh file bernama `dongle-ADMIN.key` dan simpan di root USB Dongle
+- Cek console dan copy paste `ADMIN_TOKEN_HASH` ke file `server/.env`
+- Restart Server
+  > `dongle-ADMIN.key` bersifat 1 key 1 person, ulangi step diatas jika key hilang atau ganti device USB Dongle
 
 Panitia masuk lewat kartu **Akses Panitia** di Gatekeeper dengan Kunci Panitia. Sesi panitia berlaku 30 menit. Panitia tidak bisa memilih.
 
@@ -126,6 +132,7 @@ Dekripsi membalik urutan: AES → Rail Fence → Caesar. Setiap tahap ditampilka
 | `DB_HOST`, `DB_USER`, `DB_PASS`, `DB_NAME` | koneksi MySQL                                                                                              |
 | `PORT`                                     | port server (default 3000)                                                                                 |
 | `ADMIN_KEY`                                | kunci panitia (wajib diganti)                                                                              |
+| `ADMIN_TOKEN_HASH=`                        | untuk mendapatkan `dongle-ADMIN.key`, cek section Panitia (Admin)                                          |
 | `ELECTION_SECRET`                          | kunci HMAC hash pilihan (wajib diganti)                                                                    |
 | `NIK_SALT`                                 | salt hash NIK (wajib diganti)                                                                              |
 | `FACE_KEY`                                 | kunci enkripsi descriptor wajah (wajib diganti)                                                            |
@@ -137,6 +144,7 @@ Dekripsi membalik urutan: AES → Rail Fence → Caesar. Setiap tahap ditampilka
 | `NODE_ENV`                                 | `production` mengaktifkan pemeriksaan rahasia wajib                                                        |
 | `DONGLE_REQUIRED`                          | `false` mematikan usb lock (berguna untuk testing tanpa flashdisk)                                         |
 | `DONGLE_POLL_MS`                           | interval waktu (ms) server memeriksa USB pemilih yang aktif (default `1500`)                               |
+| `LOCKOUT_SECONDS`                          | Durasi blokir akun sementara (detik) setelah 5x gagal login voter, default=60 untuk presentasi             |
 
 ## Pengujian yang Disarankan
 
