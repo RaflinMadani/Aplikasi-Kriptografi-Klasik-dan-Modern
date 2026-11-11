@@ -51,6 +51,11 @@ const openFace = (s) => {
   return JSON.parse(Buffer.concat([d.update(b.subarray(28)), d.final()]));
 };
 const FACE_THRESHOLD = Number(E.FACE_THRESHOLD) || 0.5;
+// Threshold untuk cek anti-sybil saat registrasi: lebih ketat (lebih kecil) agar
+// hanya menolak wajah yang benar-benar sama. Jika dua orang berbeda kebetulan
+// menghasilkan jarak ~0.45, threshold login (0.5) akan menganggap mereka sama padahal
+// threshold registrasi yang lebih kecil (0.4) akan membedakan mereka.
+const FACE_REGISTER_THRESHOLD = Number(E.FACE_REGISTER_THRESHOLD) || 0.4;
 const validDesc = (d) =>
   Array.isArray(d) && d.length === 128 && d.every(Number.isFinite);
 
@@ -83,25 +88,16 @@ const app = express(),
   sessions = new Map(),
   adminFails = new Map();
 
-// USB presence lock (Windows): fail-closed if the registered removable drive is absent.
+// Dynamic per-voter USB dongle lock.
+// Aplikasi tidak dikunci secara global; Gatekeeper selalu terbuka.
+// Pemilih yang sedang login dicek terus apakah file .key-nya masih ada di USB.
 const DONGLE_REQUIRED = E.DONGLE_REQUIRED !== "false";
-const DONGLE_ID = E.DONGLE_ID || "";
-const DONGLE_VOLUME_SERIAL = (E.DONGLE_VOLUME_SERIAL || "")
-  .replace(/[^0-9A-Fa-f]/g, "")
-  .toUpperCase();
-const DONGLE_MARKER = ".evoting-dongle";
-let donglePresent = !DONGLE_REQUIRED;
-let dongleCheckRunning = false;
 
-async function findRegisteredUsb() {
-  if (!DONGLE_REQUIRED) return true;
-  if (process.platform !== "win32" || !DONGLE_ID || !DONGLE_VOLUME_SERIAL)
-    return false;
-
-  // Only partitions on disks whose Windows BusType is USB are considered. The serial and marker
-  // must both match. This is a practical presence check, not tamper-proof hardware.
+// Memindai seluruh drive bertipe USB (Removable) yang terpasang dan siap di Windows.
+async function getConnectedUsbDrives() {
+  if (process.platform !== "win32") return [];
   const ps =
-    "$ErrorActionPreference='Stop'; Get-Partition | Where-Object { $_.DriveLetter } | ForEach-Object { $p=$_; $d=Get-Disk -Number $p.DiskNumber; if ($d.BusType -eq 'USB') { $l=Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DeviceID -eq ($p.DriveLetter+':') }; if ($l) { [pscustomobject]@{ DeviceID=$l.DeviceID; VolumeSerialNumber=$l.VolumeSerialNumber } } } } | ConvertTo-Json -Compress";
+    "[System.IO.DriveInfo]::GetDrives() | Where-Object { $_.DriveType.ToString() -eq 'Removable' -and $_.IsReady } | ForEach-Object { [pscustomobject]@{ DriveLetter=$_.Name.Substring(0,2) } } | ConvertTo-Json -Compress";
   try {
     const { stdout } = await execFileAsync(
       "powershell.exe",
@@ -115,64 +111,83 @@ async function findRegisteredUsb() {
       ],
       { windowsHide: true, timeout: 4000, maxBuffer: 1024 * 1024 },
     );
-    if (!stdout.trim()) return false;
+    if (!stdout.trim()) return [];
     const parsed = JSON.parse(stdout.trim());
     const drives = Array.isArray(parsed) ? parsed : [parsed];
-    for (const drive of drives) {
-      const serial = String(drive.VolumeSerialNumber || "")
-        .replace(/[^0-9A-Fa-f]/g, "")
-        .toUpperCase();
-      if (serial !== DONGLE_VOLUME_SERIAL) continue;
-      const root = String(drive.DeviceID || "");
-      if (!/^[A-Z]:$/i.test(root)) continue;
-      try {
-        const marker = (
-          await fs.promises.readFile(
-            path.join(root + "\\", DONGLE_MARKER),
-            "utf8",
-          )
-        ).trim();
-        if (marker === DONGLE_ID) return true;
-      } catch {
-        /* drive removed or marker unavailable */
-      }
-    }
-    return false;
+    return drives
+      .map((d) => String(d.DriveLetter || "").toUpperCase())
+      .filter((d) => /^[A-Z]:$/.test(d));
   } catch (err) {
-    // PowerShell/CIM failure must never unlock the application.
-    console.error("Pemeriksaan USB gagal:", err.message);
-    return false;
+    console.error("Gagal mendeteksi USB drives:", err.message);
+    return [];
   }
 }
 
-async function refreshDongleState() {
-  if (dongleCheckRunning) return;
-  dongleCheckRunning = true;
-  try {
-    const present = await findRegisteredUsb();
-    if (donglePresent && !present) {
-      sessions.clear(); // revoke voter and admin sessions immediately on detected removal
-      console.warn(
-        "USB dongle dicabut: seluruh sesi dihapus dan aplikasi dikunci.",
-      );
+// Memindai berkas dongle-V*.key di semua drive USB yang terpasang.
+async function findDonglesOnUsb() {
+  if (!DONGLE_REQUIRED) return [];
+  const usbDrives = await getConnectedUsbDrives();
+  const detected = [];
+  for (const drive of usbDrives) {
+    try {
+      const rootPath = drive + "\\";
+      const files = await fs.promises.readdir(rootPath);
+      for (const file of files) {
+        if (/^dongle-V\d{6}\.key$/i.test(file)) {
+          try {
+            const raw = await fs.promises.readFile(
+              path.join(rootPath, file),
+              "utf8",
+            );
+            const parsed = JSON.parse(raw);
+            if (
+              parsed &&
+              /^V\d{6}$/.test(parsed.voterCode) &&
+              /^[0-9a-f]{64}$/.test(parsed.token)
+            ) {
+              detected.push({
+                voterCode: parsed.voterCode,
+                token: parsed.token,
+                nikMask: parsed.nikMask || null,
+                driveLetter: drive,
+                fileName: file,
+              });
+            }
+          } catch (_) {
+            /* Lewati berkas rusak */
+          }
+        }
+      }
+    } catch (_) {
+      /* Drive tidak dapat diakses */
     }
-    if (!donglePresent && present)
-      console.log("USB dongle valid terdeteksi: aplikasi dibuka kembali.");
-    donglePresent = present;
-  } finally {
-    dongleCheckRunning = false;
   }
+  return detected;
 }
 
+// Background watcher: revoke sesi pemilih jika USB-nya dicabut.
 if (DONGLE_REQUIRED) {
-  // Initial state is locked until the first successful hardware check.
-  donglePresent = false;
-  refreshDongleState();
-  const watcher = setInterval(
-    refreshDongleState,
+  setInterval(
+    async () => {
+      const voterSessions = Array.from(sessions.entries()).filter(
+        ([_, s]) => !s.admin && s.voterCode,
+      );
+      if (voterSessions.length === 0) return;
+      const dongles = await findDonglesOnUsb();
+      for (const [tokenKey, s] of voterSessions) {
+        const exists = dongles.some(
+          (d) => d.voterCode === s.voterCode && d.token === s.token,
+        );
+        if (!exists) {
+          sessions.delete(tokenKey);
+          console.warn(
+            `[SECURITY] USB dongle untuk voter ${s.voterCode} dicabut. Sesi dibatalkan.`,
+          );
+        }
+      }
+    },
     Math.max(1000, Number(E.DONGLE_POLL_MS) || 1500),
-  );
-  watcher.unref();
+  ).unref();
 }
 
 const newSession = (data, ttl) => {
@@ -201,23 +216,8 @@ app.use((_, res, next) => {
   });
   next();
 });
-// Gate every page, static asset, and API request. When locked, only this small
-// recovery page is served; it polls by reloading until the registered USB returns.
-app.use((req, res, next) => {
-  if (!DONGLE_REQUIRED || donglePresent) return next();
-  res.set("Retry-After", "3");
-  if (req.path.startsWith("/api/")) {
-    return res.status(423).json({
-      error: "Aplikasi terkunci: USB security dongle tidak terdeteksi.",
-    });
-  }
-  return res
-    .status(423)
-    .type("html")
-    .send(
-      `<!doctype html><html lang="id"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Aplikasi Terkunci</title><style>body{font:16px system-ui;background:#101827;color:#eef2ff;display:grid;min-height:100vh;place-items:center;margin:0}.box{max-width:520px;padding:32px;border:1px solid #334155;border-radius:16px;background:#182235;text-align:center}h1{font-size:24px}.muted{color:#aab6ca}</style><main class="box"><h1>🔒 Aplikasi Terkunci</h1><p>USB security dongle tidak terdeteksi atau tidak valid.</p><p class="muted">Pasang flashdisk yang sudah didaftarkan. Halaman ini akan memeriksa ulang secara otomatis.</p></main><script>setTimeout(()=>location.reload(),3000)</script></html>`,
-    );
-});
+// Tidak ada global lock — Gatekeeper selalu terbuka.
+// Pemilih dikunci di level sesi (via /api/usb-status) bukan di level halaman.
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "../public")));
 app.use("/shared", express.static(path.join(__dirname, "../shared")));
@@ -245,7 +245,44 @@ const admin = (req, res, next) => {
     : res.status(401).json({ error: "Khusus panitia. Login sebagai admin." });
 };
 
-app.get("/api/usb-status", (_req, res) => res.json({ ok: true }));
+app.get(
+  "/api/usb-status",
+  wrap(async (req, res) => {
+    // Panitia: selalu OK
+    const s = sess(req);
+    if (!DONGLE_REQUIRED)
+      return res.json({ ok: true, role: s?.admin ? "admin" : "guest" });
+    if (s && s.admin && s.exp > Date.now())
+      return res.json({ ok: true, role: "admin" });
+    // Pemilih aktif: pastikan USB dengan token-nya masih tertancap
+    if (s && s.voterCode && s.exp > Date.now()) {
+      const dongles = await findDonglesOnUsb();
+      const stillAttached = dongles.some(
+        (d) => d.voterCode === s.voterCode && d.token === s.token,
+      );
+      if (!stillAttached) {
+        sessions.delete(
+          (req.headers.authorization || "").replace("Bearer ", ""),
+        );
+        return res.status(423).json({ error: "USB dongle pemilih dicabut." });
+      }
+      return res.json({ ok: true, role: "voter" });
+    }
+    // Tamu / belum login: tidak dikunci (Gatekeeper terbuka)
+    res.json({ ok: true, role: "guest" });
+  }),
+);
+
+// Deteksi otomatis dongle-V*.key di semua drive USB yang terpasang (Opsi B).
+// Token dikirim ke client hanya untuk keperluan login — tidak disimpan di browser.
+app.get(
+  "/api/dongle/detect",
+  wrap(async (_req, res) => {
+    if (!DONGLE_REQUIRED) return res.json({ required: false, detected: [] });
+    const dongles = await findDonglesOnUsb();
+    res.json({ required: true, detected: dongles });
+  }),
+);
 
 app.get(
   "/api/candidates",
@@ -268,12 +305,14 @@ app.post(
         !validDesc(descriptor)
       )
         return res.status(400).json({ error: "Data tidak valid." });
-      // Anti-Sybil: satu wajah hanya boleh satu NIK (Euclidean normalized <= FACE_THRESHOLD terhadap semua descriptor)
+      // Anti-Sybil: satu wajah hanya boleh satu NIK.
+      // Gunakan FACE_REGISTER_THRESHOLD (lebih kecil dari threshold login) agar
+      // dua orang dengan wajah berbeda tidak saling terblokir satu sama lain.
       const [faces] = await pool.query("SELECT face_enc FROM voters");
       if (
         faces.some((r) => {
           try {
-            return faceMatch(descriptor, openFace(r.face_enc)).ok;
+            return faceMatch(descriptor, openFace(r.face_enc), FACE_REGISTER_THRESHOLD).ok;
           } catch {
             return false;
           }
@@ -310,7 +349,7 @@ app.post(
 app.post(
   "/api/login",
   wrap(async (req, res) => {
-    const { voterCode, pin, token, descriptor, sim } = req.body,
+    const { voterCode, pin, token, descriptor } = req.body,
       fail = (msg = "Autentikasi gagal.") =>
         res.status(401).json({ error: msg });
     if (
@@ -337,11 +376,10 @@ app.post(
     }
 
     const { ok: faceMatched, dist } = faceMatch(descriptor, storedFace);
-    const simAllowed = sim === true && E.ALLOW_FACE_SIM === "true";
-    const faceOk = simAllowed || faceMatched;
+    const faceOk = faceMatched;
 
     console.log(
-      `[AUTH] Login voter ${voterCode}: distance=${isFinite(dist) ? dist.toFixed(4) : dist}, threshold=${FACE_THRESHOLD}, sim=${simAllowed} -> ${faceOk ? "PASS" : "FAIL"}`,
+      `[AUTH] Login voter ${voterCode}: distance=${isFinite(dist) ? dist.toFixed(4) : dist}, threshold=${FACE_THRESHOLD} -> ${faceOk ? "PASS" : "FAIL"}`,
     );
 
     const pinOk = eq(pinHash(pin, v.pin_salt), v.pin_hash);
@@ -364,7 +402,10 @@ app.post(
       v.id,
     ]);
     res.json({
-      session: newSession({ id: v.id }, 15 * 60e3),
+      session: newSession(
+        { id: v.id, voterCode: v.voter_code, token },
+        15 * 60e3,
+      ),
       hasVoted: !!v.has_voted,
     });
   }),

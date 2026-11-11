@@ -1,3 +1,8 @@
+# DEPRECATED: Skrip ini tidak lagi diperlukan sejak sistem beralih ke Dynamic Per-Voter USB Dongle Lock.
+# Dongle kini berupa file dongle-Vxxxxxx.key yang diunduh saat registrasi pemilih dan disimpan ke USB.
+# Tidak perlu mendaftarkan USB statis (DONGLE_ID / DONGLE_VOLUME_SERIAL) ke .env.
+# Arsipkan atau hapus skrip ini jika tidak dibutuhkan untuk referensi.
+
 param(
   [Parameter(Mandatory=$true)]
   [ValidatePattern('^[A-Za-z]$')]
