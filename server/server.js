@@ -568,6 +568,8 @@ app.post(
   wrap(async (req, res) => {
     // login panitia: dongle-ADMIN.key di USB + serial USB + kunci teks ADMIN_KEY
     // sesi 30 menit, 5 gagal = blok 5 menit per IP
+    // devBypass: kalau DONGLE_REQUIRED=false dan bukan production, cek dongle di-skip
+    const devBypass = !DONGLE_REQUIRED && E.NODE_ENV !== "production";
     const failAdmin = () =>
       res.status(401).json({ error: "Autentikasi gagal." });
     const a = adminFails.get(req.ip) || { n: 0, until: 0 };
@@ -587,13 +589,16 @@ app.post(
     }
 
     // Server scan USB langsung — cari dongle-ADMIN.key yang valid
-    const dongles = await findDonglesOnUsb();
-    const adminDongle = dongles
-      ? dongles.find(
-          (d) =>
-            d.role === "admin" && eq(sha(d.token), E.ADMIN_TOKEN_HASH || ""),
-        )
-      : null;
+    // Di devBypass, scan di-skip dan dongle dianggap valid
+    const dongles = devBypass ? [] : await findDonglesOnUsb();
+    const adminDongle = devBypass
+      ? { role: "admin", token: E.ADMIN_TOKEN_HASH || "dev" }
+      : dongles
+        ? dongles.find(
+            (d) =>
+              d.role === "admin" && eq(sha(d.token), E.ADMIN_TOKEN_HASH || ""),
+          )
+        : null;
 
     // Cek serial USB — hanya di production; di development di-skip untuk kemudahan recovery
     let serialOk = true;
