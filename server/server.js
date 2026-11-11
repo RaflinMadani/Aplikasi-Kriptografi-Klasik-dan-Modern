@@ -12,9 +12,18 @@ const Layers = require("../shared/layers"),
 const E = process.env;
 if (
   E.NODE_ENV === "production" &&
-  ["ADMIN_KEY", "ELECTION_SECRET", "NIK_SALT", "FACE_KEY", "ADMIN_TOKEN_HASH", "ADMIN_USB_SERIAL"].some((k) => !E[k])
+  [
+    "ADMIN_KEY",
+    "ELECTION_SECRET",
+    "NIK_SALT",
+    "FACE_KEY",
+    "ADMIN_TOKEN_HASH",
+    "ADMIN_USB_SERIAL",
+  ].some((k) => !E[k])
 ) {
-  console.error("Isi ADMIN_KEY, ELECTION_SECRET, NIK_SALT, FACE_KEY, ADMIN_TOKEN_HASH, ADMIN_USB_SERIAL di .env");
+  console.error(
+    "Isi ADMIN_KEY, ELECTION_SECRET, NIK_SALT, FACE_KEY, ADMIN_TOKEN_HASH, ADMIN_USB_SERIAL di .env",
+  );
   process.exit(1);
 }
 const SECRET = E.ELECTION_SECRET || "dev-secret",
@@ -128,11 +137,19 @@ async function getConnectedUsbDrives() {
 // Dipakai untuk verifikasi serial admin USB di production.
 async function getUsbSerials() {
   if (process.platform !== "win32") return [];
-  const ps = "Get-Disk | Where-Object { $_.BusType -eq 'USB' } | Select-Object -ExpandProperty SerialNumber | ConvertTo-Json -Compress";
+  const ps =
+    "Get-Disk | Where-Object { $_.BusType -eq 'USB' } | Select-Object -ExpandProperty SerialNumber | ConvertTo-Json -Compress";
   try {
     const { stdout } = await execFileAsync(
       "powershell.exe",
-      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps],
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        ps,
+      ],
       { windowsHide: true, timeout: 4000, maxBuffer: 1024 * 1024 },
     );
     if (!stdout.trim()) return [];
@@ -229,12 +246,16 @@ if (DONGLE_REQUIRED) {
         let exists;
         if (s.voterCode) {
           exists = dongles.some(
-            (d) => d.role === "voter" && d.voterCode === s.voterCode && d.token === s.token,
+            (d) =>
+              d.role === "voter" &&
+              d.voterCode === s.voterCode &&
+              d.token === s.token,
           );
         } else {
           // sesi admin — cek dongle admin masih cocok
           exists = dongles.some(
-            (d) => d.role === "admin" && eq(sha(d.token), E.ADMIN_TOKEN_HASH || ""),
+            (d) =>
+              d.role === "admin" && eq(sha(d.token), E.ADMIN_TOKEN_HASH || ""),
           );
         }
         if (!exists) {
@@ -321,7 +342,10 @@ app.get(
       const dongles = await findDonglesOnUsb();
       if (dongles === null) return res.json({ ok: true, role: "voter" }); // error scan — jangan false-revoke
       const stillAttached = dongles.some(
-        (d) => d.role === "voter" && d.voterCode === s.voterCode && d.token === s.token,
+        (d) =>
+          d.role === "voter" &&
+          d.voterCode === s.voterCode &&
+          d.token === s.token,
       );
       if (!stillAttached) {
         sessions.delete(sessionKey);
@@ -351,11 +375,20 @@ app.get(
 app.get(
   "/api/dongle/detect",
   wrap(async (_req, res) => {
-    if (!DONGLE_REQUIRED) return res.json({ required: false, detected: [], detectedAdmin: null });
+    if (!DONGLE_REQUIRED)
+      return res.json({ required: false, detected: [], detectedAdmin: null });
     const dongles = await findDonglesOnUsb();
-    const voterDongles = dongles ? dongles.filter((d) => d.role === "voter") : [];
-    const adminDongle = dongles ? dongles.find((d) => d.role === "admin") || null : null;
-    res.json({ required: true, detected: voterDongles, detectedAdmin: adminDongle ? true : false });
+    const voterDongles = dongles
+      ? dongles.filter((d) => d.role === "voter")
+      : [];
+    const adminDongle = dongles
+      ? dongles.find((d) => d.role === "admin") || null
+      : null;
+    res.json({
+      required: true,
+      detected: voterDongles,
+      detectedAdmin: adminDongle ? true : false,
+    });
   }),
 );
 
@@ -387,7 +420,11 @@ app.post(
       if (
         faces.some((r) => {
           try {
-            return faceMatch(descriptor, openFace(r.face_enc), FACE_REGISTER_THRESHOLD).ok;
+            return faceMatch(
+              descriptor,
+              openFace(r.face_enc),
+              FACE_REGISTER_THRESHOLD,
+            ).ok;
           } catch {
             return false;
           }
@@ -432,7 +469,8 @@ app.post(
       typeof pin !== "string" ||
       !/^V\d{6}$/.test(voterCode) ||
       !/^\d{4}$/.test(pin) ||
-      (!devBypass && (typeof token !== "string" || !/^[0-9a-f]{64}$/.test(token)))
+      (!devBypass &&
+        (typeof token !== "string" || !/^[0-9a-f]{64}$/.test(token)))
     )
       return fail();
 
@@ -444,8 +482,12 @@ app.post(
 
     // Cek blokir sementara dari DB (epoch ms, timezone-safe)
     if (v.locked_until_ms && v.locked_until_ms > Date.now()) {
-      const retryAfterSeconds = Math.ceil((v.locked_until_ms - Date.now()) / 1000);
-      return res.status(429).json({ error: "Akun dikunci sementara.", retryAfterSeconds });
+      const retryAfterSeconds = Math.ceil(
+        (v.locked_until_ms - Date.now()) / 1000,
+      );
+      return res
+        .status(429)
+        .json({ error: "Akun dikunci sementara.", retryAfterSeconds });
     }
     // Blokir sudah kedaluwarsa — reset
     if (v.locked_until_ms) {
@@ -484,7 +526,7 @@ app.post(
         "SELECT failed_attempts FROM voters WHERE id = ?",
         [v.id],
       );
-      const newAttempts = updated?.failed_attempts ?? (v.failed_attempts + 1);
+      const newAttempts = updated?.failed_attempts ?? v.failed_attempts + 1;
       console.warn(
         `[AUTH] Login ditolak untuk ${voterCode}: pin=${pinOk}, token=${tokenOk}, face=${faceOk}${isFinite(dist) ? ` (jarak: ${dist.toFixed(4)})` : ""}. Percobaan ke-${newAttempts}.`,
       );
@@ -494,8 +536,15 @@ app.post(
           "UPDATE voters SET failed_attempts = 0, locked_until_ms = ? WHERE id = ?",
           [lockUntilMs, v.id],
         );
-        console.warn(`[AUTH] Akun ${voterCode} dikunci ${LOCKOUT_SECONDS} detik.`);
-        return res.status(429).json({ error: "Akun dikunci sementara.", retryAfterSeconds: LOCKOUT_SECONDS });
+        console.warn(
+          `[AUTH] Akun ${voterCode} dikunci ${LOCKOUT_SECONDS} detik.`,
+        );
+        return res
+          .status(429)
+          .json({
+            error: "Akun dikunci sementara.",
+            retryAfterSeconds: LOCKOUT_SECONDS,
+          });
       }
       return fail();
     }
@@ -519,14 +568,20 @@ app.post(
   wrap(async (req, res) => {
     // login panitia: dongle-ADMIN.key di USB + serial USB + kunci teks ADMIN_KEY
     // sesi 30 menit, 5 gagal = blok 5 menit per IP
-    const failAdmin = () => res.status(401).json({ error: "Autentikasi gagal." });
+    const failAdmin = () =>
+      res.status(401).json({ error: "Autentikasi gagal." });
     const a = adminFails.get(req.ip) || { n: 0, until: 0 };
     if (a.until > Date.now())
-      return res.status(429).json({ error: "Terlalu banyak percobaan. Coba lagi beberapa menit." });
+      return res
+        .status(429)
+        .json({ error: "Terlalu banyak percobaan. Coba lagi beberapa menit." });
 
     // Cek format kunci
     if (typeof req.body.key !== "string") {
-      if (++a.n >= 5) { a.until = Date.now() + 300e3; a.n = 0; }
+      if (++a.n >= 5) {
+        a.until = Date.now() + 300e3;
+        a.n = 0;
+      }
       adminFails.set(req.ip, a);
       return failAdmin();
     }
@@ -535,7 +590,8 @@ app.post(
     const dongles = await findDonglesOnUsb();
     const adminDongle = dongles
       ? dongles.find(
-          (d) => d.role === "admin" && eq(sha(d.token), E.ADMIN_TOKEN_HASH || ""),
+          (d) =>
+            d.role === "admin" && eq(sha(d.token), E.ADMIN_TOKEN_HASH || ""),
         )
       : null;
 
@@ -549,15 +605,23 @@ app.post(
     const keyOk = eq(sha(req.body.key), sha(ADMIN_KEY));
 
     if (!adminDongle || !keyOk || !serialOk) {
-      if (++a.n >= 5) { a.until = Date.now() + 300e3; a.n = 0; }
+      if (++a.n >= 5) {
+        a.until = Date.now() + 300e3;
+        a.n = 0;
+      }
       adminFails.set(req.ip, a);
-      console.warn(`[AUTH] Login admin ditolak dari ${req.ip}: dongle=${!!adminDongle}, key=${keyOk}, serial=${serialOk}`);
+      console.warn(
+        `[AUTH] Login admin ditolak dari ${req.ip}: dongle=${!!adminDongle}, key=${keyOk}, serial=${serialOk}`,
+      );
       return failAdmin();
     }
 
     adminFails.delete(req.ip);
     res.json({
-      session: newSession({ admin: true, adminToken: adminDongle.token }, 30 * 60e3),
+      session: newSession(
+        { admin: true, adminToken: adminDongle.token },
+        30 * 60e3,
+      ),
     });
   }),
 );
@@ -570,7 +634,9 @@ app.get("/api/admin/generate-dongle", (req, res) => {
     return res.status(404).json({ error: "Tidak tersedia di production." });
   const token = crypto.randomBytes(32).toString("hex");
   const tokenHash = sha(token);
-  console.log(`[SETUP] dongle-ADMIN.key di-generate. Isi .env:\nADMIN_TOKEN_HASH=${tokenHash}`);
+  console.log(
+    `[SETUP] dongle-ADMIN.key di-generate. Isi .env:\nADMIN_TOKEN_HASH=${tokenHash}`,
+  );
   res
     .set("Content-Disposition", 'attachment; filename="dongle-ADMIN.key"')
     .set("Content-Type", "application/json")
