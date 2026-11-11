@@ -65,9 +65,13 @@ Pemilih hanya melihat dua menu setelah login: **Surat Suara** dan **Status Pemil
 
 ### Panitia (Admin)
 
-- Untuk mendapatkan `dongle-ADMIN.key`, setting di `server/.env` bagian `NODE_ENV` menjadi development.
+- Untuk mendapatkan `dongle-ADMIN.key` dan `ADMIN_USB_SERIAL`, setting di `server/.env` bagian `NODE_ENV` menjadi development
+- Jalankan di PowerShell, dan copy `Serial Number`:
+  `Get-Disk | Where-Object { $_.BusType -eq 'USB' } | Select-Object FriendlyName, SerialNumber`
+- Buka `server/.env`, set `ADMIN_USB_SERIAL=<Serial Number>`
 - Buka `http://localhost:3000/api/admin/generate-dongle` dan unduh file bernama `dongle-ADMIN.key` dan simpan di root USB Dongle
 - Cek console dan copy paste `ADMIN_TOKEN_HASH` ke file `server/.env`
+- Ubah kembali `server/.env` bagian `NODE_ENV` menjadi production
 - Restart Server
 
 > `dongle-ADMIN.key` bersifat 1 key 1 person, ulangi step diatas jika key hilang atau ganti device USB Dongle
@@ -133,7 +137,7 @@ Dekripsi membalik urutan: AES → Rail Fence → Caesar. Setiap tahap ditampilka
 | `DB_HOST`, `DB_USER`, `DB_PASS`, `DB_NAME` | koneksi MySQL                                                                                              |
 | `PORT`                                     | port server (default 3000)                                                                                 |
 | `ADMIN_KEY`                                | kunci panitia (wajib diganti)                                                                              |
-| `ADMIN_TOKEN_HASH=`                        | untuk mendapatkan `c`, cek section Panitia (Admin)                                          |
+| `ADMIN_TOKEN_HASH=`                        | untuk mendapatkan `dongle-ADMIN.key`, cek section Panitia (Admin)                                          |
 | `ELECTION_SECRET`                          | kunci HMAC hash pilihan (wajib diganti)                                                                    |
 | `NIK_SALT`                                 | salt hash NIK (wajib diganti)                                                                              |
 | `FACE_KEY`                                 | kunci enkripsi descriptor wajah (wajib diganti)                                                            |

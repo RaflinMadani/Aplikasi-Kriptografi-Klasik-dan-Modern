@@ -12,9 +12,9 @@ const Layers = require("../shared/layers"),
 const E = process.env;
 if (
   E.NODE_ENV === "production" &&
-  ["ADMIN_KEY", "ELECTION_SECRET", "NIK_SALT", "FACE_KEY", "ADMIN_TOKEN_HASH"].some((k) => !E[k])
+  ["ADMIN_KEY", "ELECTION_SECRET", "NIK_SALT", "FACE_KEY", "ADMIN_TOKEN_HASH", "ADMIN_USB_SERIAL"].some((k) => !E[k])
 ) {
-  console.error("Isi ADMIN_KEY, ELECTION_SECRET, NIK_SALT, FACE_KEY, ADMIN_TOKEN_HASH di .env");
+  console.error("Isi ADMIN_KEY, ELECTION_SECRET, NIK_SALT, FACE_KEY, ADMIN_TOKEN_HASH, ADMIN_USB_SERIAL di .env");
   process.exit(1);
 }
 const SECRET = E.ELECTION_SECRET || "dev-secret",
@@ -121,6 +121,27 @@ async function getConnectedUsbDrives() {
   } catch (err) {
     console.error("Gagal mendeteksi USB drives:", err.message);
     return null; // null = error saat scan; [] = tidak ada USB; dibedakan agar watcher tidak false-revoke
+  }
+}
+
+// Membaca serial number semua USB yang tertancap via Get-Disk (Windows only).
+// Dipakai untuk verifikasi serial admin USB di production.
+async function getUsbSerials() {
+  if (process.platform !== "win32") return [];
+  const ps = "Get-Disk | Where-Object { $_.BusType -eq 'USB' } | Select-Object -ExpandProperty SerialNumber | ConvertTo-Json -Compress";
+  try {
+    const { stdout } = await execFileAsync(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", ps],
+      { windowsHide: true, timeout: 4000, maxBuffer: 1024 * 1024 },
+    );
+    if (!stdout.trim()) return [];
+    const parsed = JSON.parse(stdout.trim());
+    const serials = Array.isArray(parsed) ? parsed : [parsed];
+    return serials.map((s) => String(s).trim()).filter(Boolean);
+  } catch (err) {
+    console.error("Gagal membaca serial USB:", err.message);
+    return [];
   }
 }
 
@@ -287,8 +308,13 @@ app.get(
   "/api/usb-status",
   wrap(async (req, res) => {
     const s = sess(req);
-    if (!DONGLE_REQUIRED)
-      return res.json({ ok: true, role: s?.admin ? "admin" : "guest" });
+    if (!DONGLE_REQUIRED) {
+      // Bypass USB — kembalikan role dari sesi aktif agar polling tidak false-kick
+      if (s && s.exp > Date.now()) {
+        return res.json({ ok: true, role: s.admin ? "admin" : "voter" });
+      }
+      return res.json({ ok: true, role: "guest" });
+    }
     const sessionKey = (req.headers.authorization || "").replace("Bearer ", "");
     // Pemilih aktif: pastikan USB dengan token-nya masih tertancap
     if (s && s.voterCode && s.exp > Date.now()) {
@@ -491,7 +517,7 @@ app.post(
 app.post(
   "/api/admin/login",
   wrap(async (req, res) => {
-    // login panitia: dongle-ADMIN.key di USB + kunci teks ADMIN_KEY
+    // login panitia: dongle-ADMIN.key di USB + serial USB + kunci teks ADMIN_KEY
     // sesi 30 menit, 5 gagal = blok 5 menit per IP
     const failAdmin = () => res.status(401).json({ error: "Autentikasi gagal." });
     const a = adminFails.get(req.ip) || { n: 0, until: 0 };
@@ -513,12 +539,19 @@ app.post(
         )
       : null;
 
+    // Cek serial USB — hanya di production; di development di-skip untuk kemudahan recovery
+    let serialOk = true;
+    if (E.NODE_ENV === "production" && E.ADMIN_USB_SERIAL) {
+      const usbSerials = await getUsbSerials();
+      serialOk = usbSerials.includes(E.ADMIN_USB_SERIAL.trim());
+    }
+
     const keyOk = eq(sha(req.body.key), sha(ADMIN_KEY));
 
-    if (!adminDongle || !keyOk) {
+    if (!adminDongle || !keyOk || !serialOk) {
       if (++a.n >= 5) { a.until = Date.now() + 300e3; a.n = 0; }
       adminFails.set(req.ip, a);
-      console.warn(`[AUTH] Login admin ditolak dari ${req.ip}: dongle=${!!adminDongle}, key=${keyOk}`);
+      console.warn(`[AUTH] Login admin ditolak dari ${req.ip}: dongle=${!!adminDongle}, key=${keyOk}, serial=${serialOk}`);
       return failAdmin();
     }
 
