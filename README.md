@@ -69,7 +69,8 @@ Pemilih hanya melihat dua menu setelah login: **Surat Suara** dan **Status Pemil
 - Buka `http://localhost:3000/api/admin/generate-dongle` dan unduh file bernama `dongle-ADMIN.key` dan simpan di root USB Dongle
 - Cek console dan copy paste `ADMIN_TOKEN_HASH` ke file `server/.env`
 - Restart Server
-  > `dongle-ADMIN.key` bersifat 1 key 1 person, ulangi step diatas jika key hilang atau ganti device USB Dongle
+
+> `dongle-ADMIN.key` bersifat 1 key 1 person, ulangi step diatas jika key hilang atau ganti device USB Dongle
 
 Panitia masuk lewat kartu **Akses Panitia** di Gatekeeper dengan Kunci Panitia. Sesi panitia berlaku 30 menit. Panitia tidak bisa memilih.
 
