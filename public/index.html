@@ -93,6 +93,17 @@
             </div>
             <button class="go alt" id="btnScanUsb" type="button" style="white-space: nowrap">Periksa USB</button>
           </div>
+          <div class="row" id="devVoterCodeRow" style="margin-top:8px;display:none">
+            <input
+              id="loginVoterCode"
+              class="pw"
+              type="text"
+              maxlength="7"
+              placeholder="Kode Pemilih (Dev: Vxxxxxx)"
+              autocomplete="off"
+              oninput="if(window.__devDongleUpdate)window.__devDongleUpdate(this.value)"
+            />
+          </div>
           <div class="row" style="margin-top: 8px">
             <input
               id="loginPin"

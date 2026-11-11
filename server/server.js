@@ -400,13 +400,13 @@ app.post(
   wrap(async (req, res) => {
     const { voterCode, pin, token, descriptor } = req.body,
       fail = () => res.status(401).json({ error: "Autentikasi gagal." });
+    const devBypass = !DONGLE_REQUIRED && E.NODE_ENV !== "production";
     if (
       typeof voterCode !== "string" ||
       typeof pin !== "string" ||
-      typeof token !== "string" ||
       !/^V\d{6}$/.test(voterCode) ||
       !/^\d{4}$/.test(pin) ||
-      !/^[0-9a-f]{64}$/.test(token)
+      (!devBypass && (typeof token !== "string" || !/^[0-9a-f]{64}$/.test(token)))
     )
       return fail();
 
@@ -447,7 +447,7 @@ app.post(
     );
 
     const pinOk = eq(pinHash(pin, v.pin_salt), v.pin_hash);
-    const tokenOk = eq(sha(token), v.token_hash);
+    const tokenOk = devBypass || eq(sha(token), v.token_hash);
 
     if (!pinOk || !tokenOk || !faceOk) {
       await pool.query(

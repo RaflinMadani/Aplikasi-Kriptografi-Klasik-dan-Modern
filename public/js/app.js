@@ -133,16 +133,28 @@ async function scanUsbDongle() {
   try {
     const data = await api('/api/dongle/detect');
     if (!data.required) {
-      // Dev mode: DONGLE_REQUIRED=false
-      iconEl.textContent = '';
-      statusEl.textContent = 'USB Dongle tidak diwajibkan (Dev Mode).';
+      // Dev mode: DONGLE_REQUIRED=false — bypass USB, voterCode diisi user manual
+      iconEl.textContent = '⚠️';
+      statusEl.textContent = 'Dev Mode: USB tidak diwajibkan. Isi Kode Pemilih manual.';
       if (!_lockTimer) loginBtn.disabled = false;
-      detectedDongle = { voterCode: null, token: null, nikMask: null };
+      // Tampilkan input kode pemilih manual (tersembunyi di mode normal)
+      const devRow = $('devVoterCodeRow');
+      if (devRow) devRow.style.display = '';
+      // Sync detectedDongle setiap kali user ketik di input
+      window.__devDongleUpdate = (val) => {
+        detectedDongle = { voterCode: val.trim() || null, token: null, nikMask: null };
+      };
+      const manualCode = $('loginVoterCode') ? $('loginVoterCode').value.trim() : null;
+      detectedDongle = { voterCode: manualCode || null, token: null, nikMask: null };
       // Update indikator admin juga
       const adminUsbEl = $('adminUsbStatus');
       if (adminUsbEl) adminUsbEl.textContent = 'Dev Mode — dongle admin tidak diwajibkan.';
       return;
     }
+    // Mode normal — sembunyikan input dev jika ada
+    const devRow = $('devVoterCodeRow');
+    if (devRow) devRow.style.display = 'none';
+    window.__devDongleUpdate = null;
     // Voter dongle
     if (data.detected && data.detected.length > 0) {
       detectedDongle = data.detected[0];

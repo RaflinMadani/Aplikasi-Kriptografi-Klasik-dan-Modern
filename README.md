@@ -133,7 +133,7 @@ Dekripsi membalik urutan: AES → Rail Fence → Caesar. Setiap tahap ditampilka
 | `DB_HOST`, `DB_USER`, `DB_PASS`, `DB_NAME` | koneksi MySQL                                                                                              |
 | `PORT`                                     | port server (default 3000)                                                                                 |
 | `ADMIN_KEY`                                | kunci panitia (wajib diganti)                                                                              |
-| `ADMIN_TOKEN_HASH=`                        | untuk mendapatkan `dongle-ADMIN.key`, cek section Panitia (Admin)                                          |
+| `ADMIN_TOKEN_HASH=`                        | untuk mendapatkan `c`, cek section Panitia (Admin)                                          |
 | `ELECTION_SECRET`                          | kunci HMAC hash pilihan (wajib diganti)                                                                    |
 | `NIK_SALT`                                 | salt hash NIK (wajib diganti)                                                                              |
 | `FACE_KEY`                                 | kunci enkripsi descriptor wajah (wajib diganti)                                                            |
