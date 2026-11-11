@@ -10,6 +10,7 @@ CREATE TABLE voters (
   token_hash CHAR(64) NOT NULL,             -- SHA-256 token kartu pemilih
   face_enc TEXT NOT NULL,                   -- descriptor wajah, AES-256-GCM
   failed_attempts TINYINT NOT NULL DEFAULT 0,
+  locked_until_ms BIGINT NULL DEFAULT NULL,    -- epoch ms UTC, dikunci sementara setelah 5x gagal
   has_voted TINYINT(1) NOT NULL DEFAULT 0
 );
 CREATE TABLE candidates (

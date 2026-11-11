@@ -41,25 +41,16 @@ e-voting-v2/
    cd server
    ```
    Rename File `server/.env.example` yang sudah disertakan menjadi `server/.env`. Periksa `DB_HOST`, `DB_USER`, `DB_PASS`, dan `DB_NAME`; ganti juga nilai rahasia `ADMIN_KEY`, `ELECTION_SECRET`, `NIK_SALT`, dan `FACE_KEY` sebelum penggunaan selain demonstrasi lokal. Jangan membuat file `.env.example` baru atau menyalin placeholder rahasia apa adanya.
-4. Daftarkan flashdisk dongle mengikuti bagian **USB Security Dongle Lock (Windows)** di bawah. Tanpa pendaftaran dongle yang valid, aplikasi akan tetap terkunci.
-   ```bash
-   cd server
-   powershell -ExecutionPolicy Bypass -File .\enroll-dongle.ps1 -DriveLetter E
-   ```
-   ganti huruf "E" dengan huruf drive USB Dongle, run, maka akan muncul:
-   ```bash
-   DONGLE_ID=...
-   DONGLE_VOLUME_SERIAL=...
-   ```
-   setelah itu salin kedua nilai tersebut ke server/.env, menggantikan nilai placeholder.
-5. Jalankan:
+4. Jalankan:
    ```bash
    npm install
    npm start
    ```
-6. Buka `http://localhost:3000` di Chrome atau Edge.
+5. Buka `http://localhost:3000` di Chrome atau Edge.
 
 Server menolak berjalan dengan `NODE_ENV=production` jika empat rahasia di atas belum diisi.
+
+> **USB Dongle**: Tidak perlu mendaftarkan flashdisk ke `.env` terlebih dahulu. Dongle akan otomatis terdeteksi saat pemilih login — lihat bagian **Alur USB Dongle Dinamis** di bawah.
 
 ## Peran dan Menu
 
@@ -67,8 +58,8 @@ Server menolak berjalan dengan `NODE_ENV=production` jika empat rahasia di atas 
 
 Pemilih hanya melihat dua menu setelah login: **Surat Suara** dan **Status Pemilih**.
 
-- **Gatekeeper**: daftar akun (NIK, PIN, rekam wajah). Dongle `.key` diunduh otomatis ke folder Downloads.
-- **Login 3 faktor**: dongle `.key`, PIN, dan pemindaian wajah.
+- **Gatekeeper**: daftar akun (NIK, PIN, rekam wajah). Dongle `.key` diunduh otomatis ke folder Downloads — **salin ke USB Flashdisk** agar bisa digunakan untuk login.
+- **Login 3 faktor (Otomatis dari USB)**: tancapkan USB yang berisi `dongle-Vxxxxxx.key`, sistem mendeteksi otomatis, lalu masukkan PIN dan pindai wajah.
 - **Surat Suara**: memilih satu kandidat. Suara dienkripsi tiga lapis di browser, lalu dikirim. Pemilih hanya bisa memilih sekali.
 - **Status Pemilih**: menampilkan NIK tersamar, kode pemilih, status memilih, waktu pencatatan, dan nomor blok ledger. Pilihan tidak ditampilkan karena ledger tidak menyimpan identitas.
 
@@ -86,13 +77,24 @@ Panitia masuk lewat kartu **Akses Panitia** di Gatekeeper dengan Kunci Panitia. 
 ### Registrasi
 
 1. Pemilih mengisi NIK 16 digit dan PIN 4 digit, lalu merekam wajah (5 sampel dirata-rata).
-2. Server memeriksa apakah wajah sudah ada di database dengan jarak Euclidean (Threshold) ≤ 0.50. Jika cocok, registrasi ditolak dengan 400 (satu wajah tidak boleh dipakai untuk banyak NIK).
+2. Server memeriksa apakah wajah sudah ada di database dengan jarak Euclidean ≤ `FACE_REGISTER_THRESHOLD` (default `0.40`). Jika cocok, registrasi ditolak dengan 400 (satu wajah tidak boleh dipakai untuk banyak NIK). Nilai ini lebih kecil dari threshold login (`0.50`) agar dua orang dengan wajah berbeda tidak saling memblokir satu sama lain.
 3. Server menyimpan hash NIK (SHA-256 dengan salt), hash PIN (PBKDF2), hash token dongle, dan descriptor wajah terenkripsi AES-256-GCM.
-4. Dongle `dongle-Vxxxxxx.key` berisi kode pemilih, token, dan NIK tersamar, lalu diunduh otomatis.
+4. Dongle `dongle-Vxxxxxx.key` berisi kode pemilih, token, dan NIK tersamar, lalu diunduh otomatis ke folder Downloads. **Salin file ini ke root USB Flashdisk** agar bisa digunakan untuk login.
+
+### Alur USB Dongle Dinamis (Per-Pemilih)
+
+Sistem menggunakan file `dongle-Vxxxxxx.key` sebagai kunci fisik USB — tidak perlu mendaftarkan serial USB ke `.env`.
+
+1. **Setelah registrasi**: salin file `dongle-Vxxxxxx.key` ke root USB Flashdisk (direktori utama).
+2. **Saat login**: tancapkan USB ke komputer, buka Gatekeeper. Sistem otomatis memindai semua drive Removable dan mendeteksi file `.key` (di drive mana pun — `D:`, `E:`, `F:`, dll.). Tombol login aktif ketika dongle ditemukan.
+3. **Selama sesi aktif**: server memantau setiap `DONGLE_POLL_MS` ms. Jika USB dicabut, sesi pemilih seketika dibatalkan.
+4. **Panitia**: tidak terpengaruh USB — masuk hanya dengan Kunci Panitia teks.
+
+> Untuk menonaktifkan USB lock saat pengujian tanpa flashdisk, set `DONGLE_REQUIRED=false` di `.env`.
 
 ### Login
 
-Server memeriksa ketiga faktor: token dongle, PIN (PBKDF2, dibandingkan dengan `timingSafeEqual`), dan wajah. Lima kali gagal mengunci akun. Sesi pemilih berlaku 15 menit dan dihapus setelah vote.
+Server memeriksa ketiga faktor: token dongle (dari file `.key` di USB), PIN (PBKDF2, dibandingkan dengan `timingSafeEqual`), dan wajah. Lima kali gagal mengunci akun. Sesi pemilih berlaku 15 menit dan dihapus setelah vote.
 
 ### Voting
 
@@ -119,33 +121,32 @@ Dekripsi membalik urutan: AES → Rail Fence → Caesar. Setiap tahap ditampilka
 
 ## Variabel Lingkungan (.env)
 
-| Variabel                                   | Fungsi                                                         |
-| ------------------------------------------ | -------------------------------------------------------------- |
-| `DB_HOST`, `DB_USER`, `DB_PASS`, `DB_NAME` | koneksi MySQL                                                  |
-| `PORT`                                     | port server (default 3000)                                     |
-| `ADMIN_KEY`                                | kunci panitia (wajib diganti)                                  |
-| `ELECTION_SECRET`                          | kunci HMAC hash pilihan (wajib diganti)                        |
-| `NIK_SALT`                                 | salt hash NIK (wajib diganti)                                  |
-| `FACE_KEY`                                 | kunci enkripsi descriptor wajah (wajib diganti)                |
-| `ELECTION_SHIFT`, `ELECTION_RAILS`         | parameter Caesar dan Rail Fence                                |
-| `BLOCK_SIZE`                               | jumlah suara per blok (default 3)                              |
-| `FACE_THRESHOLD`                           | ambang batas jarak Euclidean pencocokan wajah (default `0.50`) |
-| `ALLOW_TAMPER_DEMO`                        | `false` mematikan tombol tamper demo                           |
-| `NODE_ENV`                                 | `production` mengaktifkan pemeriksaan rahasia wajib            |
-| `DONGLE_REQUIRED`                          | `false` mematikan usb lock                                     |
-| `DONGLE_ID`, `DONGLE_VOLUME_SERIAL`        | kridentials usb dongle yang digunakan, didapatkan dari step    |
-|                                            | 4 installasi                                                   |
-| `DONGLE_POLL_MS`                           | interval waktu (ms) untuk aplikasi memeriksa apakah usb dongle |
-|                                            | masih terpasang                                                |
+| Variabel                                   | Fungsi                                                                                                     |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `DB_HOST`, `DB_USER`, `DB_PASS`, `DB_NAME` | koneksi MySQL                                                                                              |
+| `PORT`                                     | port server (default 3000)                                                                                 |
+| `ADMIN_KEY`                                | kunci panitia (wajib diganti)                                                                              |
+| `ELECTION_SECRET`                          | kunci HMAC hash pilihan (wajib diganti)                                                                    |
+| `NIK_SALT`                                 | salt hash NIK (wajib diganti)                                                                              |
+| `FACE_KEY`                                 | kunci enkripsi descriptor wajah (wajib diganti)                                                            |
+| `ELECTION_SHIFT`, `ELECTION_RAILS`         | parameter Caesar dan Rail Fence                                                                            |
+| `BLOCK_SIZE`                               | jumlah suara per blok (default 3)                                                                          |
+| `FACE_THRESHOLD`                           | ambang batas jarak Euclidean saat **login** (default `0.50`)                                               |
+| `FACE_REGISTER_THRESHOLD`                  | ambang batas jarak Euclidean cek anti-sybil saat **registrasi** (default `0.40`); harus ≤ `FACE_THRESHOLD` |
+| `ALLOW_TAMPER_DEMO`                        | `false` mematikan tombol tamper demo                                                                       |
+| `NODE_ENV`                                 | `production` mengaktifkan pemeriksaan rahasia wajib                                                        |
+| `DONGLE_REQUIRED`                          | `false` mematikan usb lock (berguna untuk testing tanpa flashdisk)                                         |
+| `DONGLE_POLL_MS`                           | interval waktu (ms) server memeriksa USB pemilih yang aktif (default `1500`)                               |
 
 ## Pengujian yang Disarankan
 
-1. Daftar NIK pertama dengan wajah Anda, lalu unduh dongle.
+1. Daftar NIK pertama dengan wajah Anda, lalu unduh dongle `dongle-Vxxxxxx.key`.
 2. Coba daftar NIK kedua dengan wajah yang sama. Server harus menolak dengan pesan wajah sudah terdaftar.
-3. Login pemilih, pilih kandidat, lalu cek halaman Status.
-4. Logout, lalu pilih kembali file `.key` dan pastikan login tetap berjalan.
-5. Login panitia dan cek setiap menu, termasuk watermark DCT (tanam, lalu periksa dengan dan tanpa kode yang sama).
-6. Tekan "Tamper blok 1" dan pastikan status rantai menjadi TAMPERED.
+3. Salin file `dongle-Vxxxxxx.key` ke root USB Flashdisk, lalu tancapkan USB ke komputer.
+4. Di halaman Gatekeeper, indikator USB harus menampilkan kode pemilih yang terdeteksi. Masukkan PIN dan pindai wajah untuk login.
+5. Cabut USB saat berada di halaman Surat Suara — sesi harus langsung berakhir.
+6. Login panitia dan cek setiap menu, termasuk watermark DCT (tanam, lalu periksa dengan dan tanpa kode yang sama).
+7. Tekan "Tamper blok 1" dan pastikan status rantai menjadi TAMPERED.
 
 ## Keterbatasan
 
@@ -153,4 +154,4 @@ Dekripsi membalik urutan: AES → Rail Fence → Caesar. Setiap tahap ditampilka
 - Tidak ada deteksi liveness pada wajah, sehingga foto atau layar masih bisa dipakai. Cek Sybil hanya mitigasi.
 - Dengan jumlah pemilih kecil, blok kecil dapat membuka pilihan lewat korelasi dengan data lain. Naikkan `BLOCK_SIZE`.
 - Caesar dan Rail Fence adalah sandi klasik dan mudah dipecahkan. Keamanan utama ada pada AES-256-GCM.
-- Dongle `.key` berada di folder Downloads, sehingga keamanannya bergantung pada pengguna yang menyimpannya.
+- Dongle `.key` harus disimpan di USB Flashdisk oleh pemilih. Jika file dicopy ke perangkat lain tanpa sepengetahuan pemilik, keamanan bergantung pada faktor PIN dan wajah.

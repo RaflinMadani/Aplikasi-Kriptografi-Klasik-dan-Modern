@@ -2,6 +2,10 @@
 const $ = id => document.getElementById(id);
 const S = { session: null, role: null, voter: null, nik: '', voted: false, votedAt: null, block: null, params: null, idle: null };
 let chart, dashTimer, lastSecure = null;
+let detectedDongle = null;     // dongle voter yang terdeteksi dari USB
+let usbScanTimer = null;       // polling auto-detect USB saat di halaman gate
+let _lockTimer = null;         // timer countdown blokir akun
+let _lockRemaining = 0;        // sisa detik blokir (dipakai saat re-show modal)
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const vis = c => (c === ' ' ? '␣' : c);
 const say = (id, t, ok = true) => { $(id).textContent = t; $(id).className = 'msg ' + (ok ? 'ok' : 'bad'); };
@@ -19,7 +23,58 @@ async function api(path, { method = 'GET', body, headers = {}, raw } = {}) {
   const r = await fetch(path, { method, headers: h, body: body && (raw ? body : JSON.stringify(body)) });
   if (r.status === 401 && S.session) lock('Sesi tidak valid. Silakan login ulang.');
   if (!(r.headers.get('content-type') || '').includes('json')) { if (!r.ok) throw new Error('Permintaan gagal.'); return r; }
-  const j = await r.json(); if (!r.ok) throw new Error(j.error || 'Permintaan gagal.'); return j;
+  const j = await r.json();
+  if (r.status === 429) {
+    const err = new Error(j.error || 'Terlalu banyak percobaan.');
+    err.retryAfterSeconds = j.retryAfterSeconds;
+    throw err;
+  }
+  if (!r.ok) throw new Error(j.error || 'Permintaan gagal.');
+  return j;
+}
+
+// ----- Modal blokir akun sementara -----
+function showLockModal(seconds) {
+  // Jika timer masih aktif (user sudah close modal tapi blokir belum habis):
+  // re-show modal dengan sisa waktu dari timer lokal, bukan dari server.
+  if (_lockTimer !== null) {
+    const existing = document.getElementById('lockModal');
+    if (!existing) _buildLockModal(_lockRemaining);
+    return;
+  }
+  _lockRemaining = seconds;
+  _buildLockModal(_lockRemaining);
+}
+function _buildLockModal(remaining) {
+  // Hapus modal lama jika ada (dari re-show)
+  const old = document.getElementById('lockModal');
+  if (old) old.remove();
+  const modal = document.createElement('div');
+  modal.id = 'lockModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;z-index:9999';
+  modal.innerHTML = `
+    <div style="background:#1e2330;border-radius:12px;padding:28px 32px;max-width:340px;width:90%;text-align:center;position:relative;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+      <button id="lockModalClose" style="position:absolute;top:10px;right:14px;background:none;border:none;color:#93a3bd;font-size:20px;cursor:pointer;line-height:1" title="Tutup tampilan">✕</button>
+      <img src="/img/locked.jpeg" alt="" style="width:100%;border-radius:8px;margin-bottom:16px">
+      <p style="color:#e0a43a;font-size:15px;font-weight:600;margin:0 0 8px">Akun Dikunci Sementara</p>
+      <p style="color:#93a3bd;font-size:13px;margin:0 0 16px">Coba lagi dalam <b id="lockCountdown" style="color:#fff">${remaining}</b> detik</p>
+    </div>`;
+  document.body.appendChild(modal);
+  document.getElementById('lockModalClose').onclick = () => modal.remove();
+  $('btnLogin') && ($('btnLogin').disabled = true);
+  // Hanya mulai timer baru jika belum ada (hindari double-interval)
+  if (_lockTimer !== null) return;
+  _lockTimer = setInterval(() => {
+    _lockRemaining--;
+    const cd = document.getElementById('lockCountdown');
+    if (cd) cd.textContent = _lockRemaining;
+    if (_lockRemaining <= 0) {
+      clearInterval(_lockTimer); _lockTimer = null; _lockRemaining = 0;
+      const m = document.getElementById('lockModal');
+      if (m) m.remove();
+      if ($('btnLogin') && detectedDongle) $('btnLogin').disabled = false;
+    }
+  }, 1000);
 }
 
 // ----- navigasi berdasarkan peran -----
@@ -36,7 +91,13 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.da
 // ----- pembersihan state total -----
 function resetGate() {
   ['regNik', 'regPin', 'loginPin', 'adminKey'].forEach(i => { $(i).value = ''; });
-  $('keyFile').value = ''; $('dongleName').textContent = '';
+  $('dongleName') && ($('dongleName').textContent = '');
+  detectedDongle = null;
+  clearInterval(usbScanTimer); usbScanTimer = null;
+  // Reset indikator USB ke state awal (akan mulai scan ulang saat user kembali ke gate)
+  if ($('usbStatusText')) $('usbStatusText').textContent = 'Mencari USB Dongle...';
+  if ($('usbIcon')) $('usbIcon').textContent = '';
+  if ($('btnLogin')) $('btnLogin').disabled = true;
   ['msgReg', 'msgLogin', 'msgAdmin'].forEach(i => { $(i).textContent = ''; $(i).className = 'msg'; });
 }
 function clearWork() {
@@ -47,9 +108,14 @@ function clearWork() {
 }
 function lock(reason, ok = false) {
   clearTimeout(S.idle); stopCamera($('cam'));
+  window.__CURRENT_VOTER_SESSION = null;
+  detectedDongle = null;
+  clearInterval(usbScanTimer); usbScanTimer = null;
   Object.assign(S, { session: null, role: null, voter: null, nik: '', voted: false, votedAt: null, block: null, params: null, idle: null });
   clearWork(); resetGate(); $('acct').textContent = 'Belum login'; $('btnLogout').hidden = true; refreshNav(); show('gate');
   if (reason) say('msgLogin', reason, ok);
+  // Mulai polling USB kembali setelah lock (untuk tampilkan dongle bila ada)
+  startUsbPolling();
 }
 function armIdle() { clearTimeout(S.idle); S.idle = setTimeout(() => S.session && lock('Tidak ada aktivitas 5 menit. Dikunci otomatis.'), 300000); }
 ['pointerdown', 'keydown'].forEach(e => document.addEventListener(e, () => S.session && armIdle()));
@@ -58,8 +124,59 @@ window.addEventListener('pageshow', e => { if (e.persisted) lock(''); });
 const updateAcct = () => { $('acct').textContent = S.role === 'admin' ? 'Panitia (Admin)' : `NIK ${S.nik} · ${S.voter} · ${S.voted ? 'Sudah memilih' : 'Belum memilih'}`; };
 function startSession() { resetGate(); stopCamera($('cam')); $('btnLogout').hidden = false; updateAcct(); refreshNav(); armIdle(); }
 
+// ----- USB Dongle auto-detect -----
+async function scanUsbDongle() {
+  const statusEl = $('usbStatusText');
+  const iconEl = $('usbIcon');
+  const loginBtn = $('btnLogin');
+  if (!statusEl) return; // bukan di halaman gate
+  try {
+    const data = await api('/api/dongle/detect');
+    if (!data.required) {
+      // Dev mode: DONGLE_REQUIRED=false
+      iconEl.textContent = '';
+      statusEl.textContent = 'USB Dongle tidak diwajibkan (Dev Mode).';
+      if (!_lockTimer) loginBtn.disabled = false;
+      detectedDongle = { voterCode: null, token: null, nikMask: null };
+      // Update indikator admin juga
+      const adminUsbEl = $('adminUsbStatus');
+      if (adminUsbEl) adminUsbEl.textContent = 'Dev Mode — dongle admin tidak diwajibkan.';
+      return;
+    }
+    // Voter dongle
+    if (data.detected && data.detected.length > 0) {
+      detectedDongle = data.detected[0];
+      iconEl.textContent = '';
+      statusEl.innerHTML = `Terdeteksi: <b>${esc(detectedDongle.voterCode)}</b> di Drive <b>${esc(detectedDongle.driveLetter)}</b>`;
+      if (!_lockTimer) loginBtn.disabled = false;
+    } else {
+      detectedDongle = null;
+      iconEl.textContent = '';
+      statusEl.textContent = 'Menunggu USB Dongle dicolokkan...';
+      loginBtn.disabled = true;
+    }
+    // Admin dongle
+    const adminUsbEl = $('adminUsbStatus');
+    if (adminUsbEl) {
+      if (data.detectedAdmin) {
+        adminUsbEl.innerHTML = '<span style="color:#4ade80">&#10003; dongle-ADMIN.key terdeteksi</span>';
+      } else {
+        adminUsbEl.innerHTML = '<span style="color:#f87171">Menunggu dongle-ADMIN.key...</span>';
+      }
+    }
+  } catch (_) {
+    // Server tidak dapat menjawab — jangan crash UI
+  }
+}
+function startUsbPolling() {
+  clearInterval(usbScanTimer);
+  scanUsbDongle(); // langsung scan pertama
+  usbScanTimer = setInterval(scanUsbDongle, 2500);
+}
+
 // ----- Gatekeeper -----
 $('btnCam').onclick = guard('msgLogin', async () => { await startCamera($('cam'), t => say('msgLogin', t)); });
+$('btnScanUsb').onclick = () => scanUsbDongle();
 $('btnReg').onclick = guard('msgReg', async () => {
   const nik = $('regNik').value.trim(), pin = $('regPin').value;
   if (!/^\d{16}$/.test(nik) || !/^\d{4}$/.test(pin)) throw new Error('NIK harus 16 digit dan PIN 4 digit.');
@@ -67,28 +184,38 @@ $('btnReg').onclick = guard('msgReg', async () => {
   const r = await api('/api/register', { method: 'POST', body: { nik, pin, descriptor } });
   const name = saveDongle({ voterCode: r.voterCode, token: r.token, nikMask: nik.slice(0, 4) + '********' + nik.slice(-4) });
   $('regNik').value = ''; $('regPin').value = '';
-  say('msgReg', `Terdaftar. Kode pemilih ${r.voterCode}. Dongle ${name} otomatis diunduh ke folder Downloads.`);
-  toast(`Dongle ${name} diunduh ke folder Downloads. Simpan baik-baik.`);
+  say('msgReg', `Terdaftar. Kode pemilih ${r.voterCode}. Dongle ${name} otomatis diunduh ke folder Downloads. Salin ke USB untuk login.`);
+  toast(`Dongle ${name} diunduh. Salin ke USB Flashdisk agar bisa login.`);
 });
-$('keyFile').onchange = guard('msgLogin', async () => {
-  $('dongleName').textContent = ''; const f = $('keyFile').files[0]; if (!f) return;
-  try { const d = await readDongleFile(f); $('dongleName').textContent = f.name; say('msgLogin', `Dongle terbaca (${d.rec.voterCode}).`); toast('Dongle terbaca.'); }
-  catch (e) { $('keyFile').value = ''; throw e; }
-});
-$('btnLogin').onclick = guard('msgLogin', async () => {
-  const f = $('keyFile').files[0]; if (!f) throw new Error('Pilih berkas dongle .key dulu.');
-  const d = await readDongleFile(f), pin = $('loginPin').value; // dibaca ulang setiap login: tidak ada cache lama
-  if (!/^\d{4}$/.test(pin)) throw new Error('PIN harus 4 digit.');
-  const descriptor = await scan('msgLogin', 4);
-  const r = await api('/api/login', { method: 'POST', body: { voterCode: d.rec.voterCode, pin, token: d.rec.token, descriptor } });
-  Object.assign(S, { session: r.session, role: 'voter', voter: d.rec.voterCode, nik: d.rec.nikMask || '(tidak ada di dongle)', voted: r.hasVoted });
-  S.params = await api('/api/election');
-  startSession(); renderStatus(); toast('Login 3 faktor berhasil.');
-  if (S.voted) show('status'); else { await loadCandidates(); show('vote'); }
-});
+$('btnLogin').onclick = async () => {
+  try {
+    if (!detectedDongle || !detectedDongle.voterCode) throw new Error('Colokkan flashdisk USB yang berisi berkas dongle .key.');
+    const pin = $('loginPin').value;
+    if (!/^\d{4}$/.test(pin)) throw new Error('PIN harus 4 digit.');
+    const descriptor = await scan('msgLogin', 4);
+    const r = await api('/api/login', { method: 'POST', body: { voterCode: detectedDongle.voterCode, pin, token: detectedDongle.token, descriptor } });
+    // Simpan session di window agar polling USB status tahu siapa yang login
+    window.__CURRENT_VOTER_SESSION = r.session;
+    Object.assign(S, { session: r.session, role: 'voter', voter: detectedDongle.voterCode, nik: detectedDongle.nikMask || '(disamarkan)', voted: r.hasVoted });
+    S.params = await api('/api/election');
+    // Hentikan polling gate, mulai guard sesi
+    clearInterval(usbScanTimer); usbScanTimer = null;
+    startSession(); renderStatus(); toast('Login 3 faktor berhasil.');
+    if (S.voted) show('status'); else { await loadCandidates(); show('vote'); }
+  } catch (e) {
+    if (e.retryAfterSeconds) {
+      showLockModal(e.retryAfterSeconds);
+      return;
+    }
+    const m = e.message || String(e);
+    say('msgLogin', m, false); toast(m, false);
+  }
+};
 $('btnAdmin').onclick = guard('msgAdmin', async () => {
   const key = $('adminKey').value; if (!key) throw new Error('Isi kunci panitia.');
   const r = await api('/api/admin/login', { method: 'POST', body: { key } });
+  // Simpan session agar polling USB status mencakup sesi admin
+  window.__CURRENT_VOTER_SESSION = r.session;
   Object.assign(S, { session: r.session, role: 'admin' }); startSession(); toast('Login panitia berhasil.'); show('dash');
 });
 
@@ -222,4 +349,4 @@ $('autoDash').onchange = () => { clearInterval(dashTimer); if ($('autoDash').che
 $('btnSeal').onclick = guard('msgDash', async () => { const r = await api('/api/admin/seal', { method: 'POST' }); await refreshDash(); toast(r.sealedBlock != null ? `Blok #${r.sealedBlock} tersegel.` : 'Tidak ada suara tertunda.'); });
 $('btnTamper').onclick = guard('msgDash', async () => { await api('/api/admin/tamper', { method: 'POST', body: { idx: 1 } }); await refreshDash(); toast('Blok 1 dirusak (demo). Lihat status rantai.', false); });
 
-lock('');
+document.addEventListener('DOMContentLoaded', () => lock(''));
