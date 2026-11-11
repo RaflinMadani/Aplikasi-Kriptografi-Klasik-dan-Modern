@@ -533,7 +533,7 @@ app.post(
 // Buka endpoint ini di browser, unduh file dongle-ADMIN.key, salin ke USB,
 // lalu isi ADMIN_TOKEN_HASH di .env dengan nilai dari header x-token-hash dan restart server.
 app.get("/api/admin/generate-dongle", (req, res) => {
-  if (E.NODE_ENV === "production")
+  if (E.NODE_ENV !== "development")
     return res.status(404).json({ error: "Tidak tersedia di production." });
   const token = crypto.randomBytes(32).toString("hex");
   const tokenHash = sha(token);
