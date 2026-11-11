@@ -11,7 +11,7 @@ e-voting-v2/
 │   ├── server.js              # API, sesi, validasi, menyajikan public/ dan shared/
 │   ├── ledger.js              # hash chaining, Merkle tree, tally
 │   ├── package.json
-│   └── .env.example
+│   └── .env.example           # Konfigurasi Aplikasi
 ├── shared/layers.js           # Caesar -> Rail Fence -> AES-256-GCM (browser dan server)
 └── public/
     ├── index.html             # sidebar berbasis peran
@@ -40,7 +40,7 @@ e-voting-v2/
    ```powershell
    cd server
    ```
-   File `server/.env` sudah disertakan. Periksa `DB_HOST`, `DB_USER`, `DB_PASS`, dan `DB_NAME`; ganti juga nilai rahasia `ADMIN_KEY`, `ELECTION_SECRET`, `NIK_SALT`, dan `FACE_KEY` sebelum penggunaan selain demonstrasi lokal. Jangan membuat file `.env.example` baru atau menyalin placeholder rahasia apa adanya.
+   Rename File `server/.env.example` yang sudah disertakan menjadi `server/.env`. Periksa `DB_HOST`, `DB_USER`, `DB_PASS`, dan `DB_NAME`; ganti juga nilai rahasia `ADMIN_KEY`, `ELECTION_SECRET`, `NIK_SALT`, dan `FACE_KEY` sebelum penggunaan selain demonstrasi lokal. Jangan membuat file `.env.example` baru atau menyalin placeholder rahasia apa adanya.
 4. Daftarkan flashdisk dongle mengikuti bagian **USB Security Dongle Lock (Windows)** di bawah. Tanpa pendaftaran dongle yang valid, aplikasi akan tetap terkunci.
    ```bash
    cd server
@@ -86,7 +86,7 @@ Panitia masuk lewat kartu **Akses Panitia** di Gatekeeper dengan Kunci Panitia. 
 ### Registrasi
 
 1. Pemilih mengisi NIK 16 digit dan PIN 4 digit, lalu merekam wajah (5 sampel dirata-rata).
-2. Server memeriksa apakah wajah sudah ada di database dengan jarak Euclidean ≤ 0.50. Jika cocok, registrasi ditolak dengan 400 (satu wajah tidak boleh dipakai untuk banyak NIK).
+2. Server memeriksa apakah wajah sudah ada di database dengan jarak Euclidean (Threshold) ≤ 0.50. Jika cocok, registrasi ditolak dengan 400 (satu wajah tidak boleh dipakai untuk banyak NIK).
 3. Server menyimpan hash NIK (SHA-256 dengan salt), hash PIN (PBKDF2), hash token dongle, dan descriptor wajah terenkripsi AES-256-GCM.
 4. Dongle `dongle-Vxxxxxx.key` berisi kode pemilih, token, dan NIK tersamar, lalu diunduh otomatis.
 
@@ -119,20 +119,24 @@ Dekripsi membalik urutan: AES → Rail Fence → Caesar. Setiap tahap ditampilka
 
 ## Variabel Lingkungan (.env)
 
-| Variabel                                   | Fungsi                                                          |
-| ------------------------------------------ | --------------------------------------------------------------- |
-| `DB_HOST`, `DB_USER`, `DB_PASS`, `DB_NAME` | koneksi MySQL                                                   |
-| `PORT`                                     | port server (default 3000)                                      |
-| `ADMIN_KEY`                                | kunci panitia (wajib diganti)                                   |
-| `ELECTION_SECRET`                          | kunci HMAC hash pilihan (wajib diganti)                         |
-| `NIK_SALT`                                 | salt hash NIK (wajib diganti)                                   |
-| `FACE_KEY`                                 | kunci enkripsi descriptor wajah (wajib diganti)                 |
-| `ELECTION_SHIFT`, `ELECTION_RAILS`         | parameter Caesar dan Rail Fence                                 |
-| `BLOCK_SIZE`                               | jumlah suara per blok (default 3)                               |
-| `FACE_THRESHOLD`                           | ambang batas jarak Euclidean pencocokan wajah (default `0.30`)  |
-| `ALLOW_FACE_SIM`                           | `true` mengizinkan simulasi wajah (hanya demo, default `false`) |
-| `ALLOW_TAMPER_DEMO`                        | `false` mematikan tombol tamper demo                            |
-| `NODE_ENV`                                 | `production` mengaktifkan pemeriksaan rahasia wajib             |
+| Variabel                                   | Fungsi                                                         |
+| ------------------------------------------ | -------------------------------------------------------------- |
+| `DB_HOST`, `DB_USER`, `DB_PASS`, `DB_NAME` | koneksi MySQL                                                  |
+| `PORT`                                     | port server (default 3000)                                     |
+| `ADMIN_KEY`                                | kunci panitia (wajib diganti)                                  |
+| `ELECTION_SECRET`                          | kunci HMAC hash pilihan (wajib diganti)                        |
+| `NIK_SALT`                                 | salt hash NIK (wajib diganti)                                  |
+| `FACE_KEY`                                 | kunci enkripsi descriptor wajah (wajib diganti)                |
+| `ELECTION_SHIFT`, `ELECTION_RAILS`         | parameter Caesar dan Rail Fence                                |
+| `BLOCK_SIZE`                               | jumlah suara per blok (default 3)                              |
+| `FACE_THRESHOLD`                           | ambang batas jarak Euclidean pencocokan wajah (default `0.50`) |
+| `ALLOW_TAMPER_DEMO`                        | `false` mematikan tombol tamper demo                           |
+| `NODE_ENV`                                 | `production` mengaktifkan pemeriksaan rahasia wajib            |
+| `DONGLE_REQUIRED`                          | `false` mematikan usb lock                                     |
+| `DONGLE_ID`, `DONGLE_VOLUME_SERIAL`        | kridentials usb dongle yang digunakan, didapatkan dari step    |
+|                                            | 4 installasi                                                   |
+| `DONGLE_POLL_MS`                           | interval waktu (ms) untuk aplikasi memeriksa apakah usb dongle |
+|                                            | masih terpasang                                                |
 
 ## Pengujian yang Disarankan
 
@@ -147,40 +151,6 @@ Dekripsi membalik urutan: AES → Rail Fence → Caesar. Setiap tahap ditampilka
 
 - Kunci panitia dan token dikirim lewat HTTP. Gunakan HTTPS saat dipakai di luar lokal.
 - Tidak ada deteksi liveness pada wajah, sehingga foto atau layar masih bisa dipakai. Cek Sybil hanya mitigasi.
-- Simulasi wajah (`ALLOW_FACE_SIM=true`) hanya untuk demo.
 - Dengan jumlah pemilih kecil, blok kecil dapat membuka pilihan lewat korelasi dengan data lain. Naikkan `BLOCK_SIZE`.
 - Caesar dan Rail Fence adalah sandi klasik dan mudah dipecahkan. Keamanan utama ada pada AES-256-GCM.
 - Dongle `.key` berada di folder Downloads, sehingga keamanannya bergantung pada pengguna yang menyimpannya.
-
-## USB Security Dongle Lock (Windows)
-
-Backend now locks **all pages, static files, and API endpoints** unless the registered removable USB drive is connected. When the drive is detected as removed, all in-memory voter/admin sessions are revoked. Tabs that were already open also replace their contents with a lock screen using a short status poll. The server process remains running and automatically unlocks after the same USB is reinserted.
-
-### Enroll the USB (one-time setup)
-
-1. Plug in the flashdisk dedicated to this application.
-2. Open PowerShell in `AplikasiKripto/server`.
-3. Run (replace `E` with the flashdisk drive letter):
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\enroll-dongle.ps1 -DriveLetter E
-   ```
-4. Copy the two generated values (`DONGLE_ID` and `DONGLE_VOLUME_SERIAL`) into `server/.env`, replacing the placeholders.
-5. Keep the `.evoting-dongle` marker file on the flashdisk. Do not format the drive or delete this file.
-6. Restart the Node server.
-
-### Run and test
-
-```powershell
-cd server
-npm install
-npm start
-```
-
-- Without the registered USB: `http://localhost:3000` shows **Aplikasi Terkunci** and API calls return HTTP 423.
-- With the registered USB: the application becomes accessible automatically (within the polling interval).
-- Remove the USB: within approximately 1.5–4 seconds, the server detects removal, revokes all sessions, and locks the application.
-- Reinsert the same USB: the app unlocks automatically; users must log in again because previous sessions were revoked.
-
-Set `DONGLE_REQUIRED=false` only to disable the USB gate for development/recovery. This is not recommended for a protected deployment.
-
-**Security limitation:** this implementation is a practical Windows removable-drive presence gate for an academic/demo project. A normal flash drive's volume serial and marker file can be cloned or spoofed by a sufficiently capable attacker. It is not equivalent to a cryptographic USB token with a non-exportable private key. For stronger protection, use a hardware security key/secure element with challenge-response, and keep the server machine physically controlled.
