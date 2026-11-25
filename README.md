@@ -35,7 +35,7 @@ e-voting-v2/
 ## Instalasi
 
 1. Nyalakan Apache dan MySQL di XAMPP, lalu impor `database/schema.sql` lewat phpMyAdmin.
-2. Pastikan tabel `campaign_docs` ada (kolom: `id`, `name`, `size`, `data LONGBLOB`, `created_at`). Tabel ini tidak ada di skema lama.
+2. Pastikan tabel `campaign_docs` ada (kolom: `id`, `name`, `size`, `data LONGBLOB`, `created_at`). Tabel ini tidak ada di skema lama. Jika memakai database lama, periksa juga tabel `reports` untuk laporan pemilih dan kolom `voters.vote_sealed` untuk status penyegelan. Keduanya tercantum di `database/schema.sql`.
 3. Masuk ke folder server:
    ```powershell
    cd server
@@ -56,12 +56,13 @@ Server menolak berjalan dengan `NODE_ENV=production` jika empat rahasia di atas 
 
 ### Pemilih
 
-Pemilih hanya melihat dua menu setelah login: **Surat Suara** dan **Status Pemilih**.
+Setelah login, pemilih melihat tiga menu: **Surat Suara**, **Status Pemilih**, dan **Laporkan Kendala**.
 
 - **Gatekeeper**: daftar akun (NIK, PIN, rekam wajah). Dongle `.key` diunduh otomatis ke folder Downloads — **salin ke USB Dongle** agar bisa digunakan untuk login.
 - **Login 3 faktor (Otomatis dari USB)**: tancapkan USB yang berisi `dongle-Vxxxxxx.key`, sistem mendeteksi otomatis, lalu masukkan PIN dan pindai wajah.
 - **Surat Suara**: memilih satu kandidat. Suara dienkripsi tiga lapis di browser, lalu dikirim. Pemilih hanya bisa memilih sekali.
-- **Status Pemilih**: menampilkan NIK tersamar, kode pemilih, status memilih, waktu pencatatan, dan nomor blok ledger. Pilihan tidak ditampilkan karena ledger tidak menyimpan identitas.
+- **Status Pemilih** menampilkan NIK tersamar, kode pemilih, dan status suara. Setelah login ulang, status **Menunggu disegel** atau **Sudah tersegel** mengikuti nilai `voters.vote_sealed`. Untuk suara lama yang statusnya belum diketahui, halaman menampilkan **Status penyegelan belum diketahui**. Waktu pencatatan dan nomor blok hanya ditampilkan jika tersedia pada sesi tersebut.
+- **Laporkan Kendala** memungkinkan pemilih menulis laporan dan memilih geser Caesar, jumlah rel Rail Fence, serta kata sandi AES untuk setiap laporan.
 
 ### Panitia (Admin)
 
@@ -78,7 +79,7 @@ Pemilih hanya melihat dua menu setelah login: **Surat Suara** dan **Status Pemil
 
 Panitia masuk lewat kartu **Akses Panitia** di Gatekeeper dengan Kunci Panitia. Sesi panitia berlaku 30 menit. Panitia tidak bisa memilih.
 
-- **Tactical Command Messaging**: inbox panitia untuk membaca laporan pemilih dengan enkripsi tiga lapis.
+- **Tactical Command Messaging** berisi penjelasan cara kerja dan **Inbox Laporan Pemilih**. Klik **Muat Laporan**, lalu **Dekripsi** pada laporan yang ingin dibaca. Inbox menampilkan parameter enkripsi laporan, ciphertext dalam paket Base64, dan isi laporan hasil dekripsi.
 - **Campaign Logistical Vault**: brankas dokumen logistik. Berkas dienkripsi di browser (`.secure`), lalu disimpan ke server atau diunduh.
 - **Anti-Counterfeit Credential**: menanam watermark DCT ke poster resmi, lalu memeriksa materi yang beredar. Hasilnya ASLI, MENCURIGAKAN (kode berbeda), atau TIRUAN (watermark tidak ditemukan).
 - **Command Dashboard**: grafik suara tersegel, status rantai ledger, daftar blok, tombol segel, dan demo tamper.
@@ -122,7 +123,7 @@ Server memeriksa ketiga faktor: token dongle (dari file `.key` di USB), PIN (PBK
 - **Rail Fence**: huruf ditulis zig-zag pada N rel, lalu dibaca baris demi baris. Dekripsi membentuk ulang pola zig-zag.
 - **AES-256-GCM**: kunci dari PBKDF2-SHA256 (100.000 iterasi, salt 16 B), IV 12 B, dan tag autentikasi 16 B. Paket Base64 berisi salt, IV, dan ciphertext+tag. Dekripsi memeriksa tag dulu.
 
-Dekripsi membalik urutan: AES → Rail Fence → Caesar. Setiap tahap ditampilkan dalam tabel bertahap di halaman.
+Dekripsi membuka lapisan AES terlebih dahulu, lalu membalik Rail Fence dan geser Caesar.
 
 **File `.secure`:** PBKDF2 menghasilkan kunci RC4 (16 B) dan kunci HMAC (32 B). RC4 membuang 768 byte keystream pertama, lalu di-XOR dengan data. HMAC-SHA256 dihitung atas seluruh berkas (encrypt-then-MAC). Jika HMAC tidak cocok, dekripsi ditolak.
 
