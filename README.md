@@ -78,7 +78,7 @@ Pemilih hanya melihat dua menu setelah login: **Surat Suara** dan **Status Pemil
 
 Panitia masuk lewat kartu **Akses Panitia** di Gatekeeper dengan Kunci Panitia. Sesi panitia berlaku 30 menit. Panitia tidak bisa memilih.
 
-- **Tactical Command Messaging**: kanal pesan perintah terenkripsi 3 lapis antar koordinator kampanye.
+- **Tactical Command Messaging**: inbox panitia untuk membaca laporan pemilih dengan enkripsi tiga lapis.
 - **Campaign Logistical Vault**: brankas dokumen logistik. Berkas dienkripsi di browser (`.secure`), lalu disimpan ke server atau diunduh.
 - **Anti-Counterfeit Credential**: menanam watermark DCT ke poster resmi, lalu memeriksa materi yang beredar. Hasilnya ASLI, MENCURIGAKAN (kode berbeda), atau TIRUAN (watermark tidak ditemukan).
 - **Command Dashboard**: grafik suara tersegel, status rantai ledger, daftar blok, tombol segel, dan demo tamper.

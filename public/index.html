@@ -13,7 +13,8 @@
       <nav id="nav">
         <button data-t="gate">Gatekeeper</button>
         <button data-t="vote" hidden>Surat Suara</button
-        ><button data-t="status" hidden>Status Pemilih</button>
+        ><button data-t="status" hidden>Status Pemilih</button
+        ><button data-t="report" hidden>Laporkan Kendala</button>
         <button data-t="text" hidden>Tactical Command Messaging</button
         ><button data-t="file" hidden>Campaign Logistical Vault</button>
         <button data-t="stego" hidden>Anti-Counterfeit Credential</button
@@ -36,12 +37,12 @@
           <p>
             <b>Pemilih</b>: daftar (NIK + PIN + wajah, dongle .key diunduh
             otomatis), login 3 faktor (dongle + PIN + wajah), memilih satu kali,
-            lalu melihat halaman Status. Hanya menu Surat Suara dan Status yang
-            terbuka.
+            lalu melihat halaman Status. Di menu Laporkan Kendala, pemilih
+            dapat mengatur kunci enkripsi sebelum mengirim laporan ke panitia.
           </p>
           <p>
             <b>Panitia (Admin)</b>: masuk dengan Kunci Panitia. Membuka Tactical
-            Command Messaging (pesan perintah 3 lapis), Campaign Logistical
+            Command Messaging (inbox laporan pemilih), Campaign Logistical
             Vault (brankas dokumen .secure), Anti-Counterfeit Credential
             (watermark DCT untuk mendeteksi poster/kartu palsu), dan Command
             Dashboard (ledger, segel blok, deteksi tamper). Panitia tidak bisa
@@ -152,62 +153,44 @@
         </div>
       </section>
 
+      <section id="report">
+        <h2>Laporkan Kendala</h2>
+        <p class="mut">Gunakan formulir ini untuk melaporkan kendala teknis yang Anda alami saat proses pemilihan.</p>
+        <form id="reportForm" class="card">
+          <textarea id="reportMsg" maxlength="2000" required placeholder="Jelaskan kendala yang Anda alami..."></textarea>
+          <h3>Kunci enkripsi laporan</h3>
+          <div class="row" style="margin-top: 8px">
+            <label>Geser Caesar (0–25)
+              <input id="reportShift" type="number" min="0" max="25" value="7" required>
+            </label>
+            <label>Rel Rail Fence (2–2000)
+              <input id="reportRails" type="number" min="2" max="2000" value="4" required>
+            </label>
+            <label>Kata sandi AES (minimal 6 karakter)
+              <input id="reportPass" type="password" minlength="6" maxlength="128" autocomplete="new-password" required>
+            </label>
+          </div>
+          <button class="go" id="btnReport" type="submit" style="margin-top: 8px">Kirim Laporan</button>
+          <p class="msg" id="msgReport"></p>
+        </form>
+      </section>
+
       <section id="text">
         <h2>Tactical Command Messaging</h2>
-        <p class="mut">
-          Kanal pesan perintah terenkripsi antar-koordinator kampanye (instruksi
-          lapangan, arahan logistik, jadwal rapat tertutup).
-        </p>
         <details class="explain" open>
-          <summary>Cara kerja super-enkripsi 3 lapis</summary>
-          <p>
-            Pesan melewati tiga lapis berurutan: Plaintext → Caesar → Rail Fence
-            → AES-256-GCM. Caesar dan Rail Fence adalah sandi klasik (edukasi,
-            mudah dipecahkan sendirian); keamanan sesungguhnya ada di
-            AES-256-GCM. Dekripsi membalik urutan: AES → Rail Fence → Caesar.
-            Tabel tiap tahap muncul setelah proses dijalankan.
-          </p>
+          <summary>Cara kerja laporan terenkripsi</summary>
+          <p>Pemilih mengirim laporan melalui menu Laporkan Kendala. Server mengenkripsi pesan
+            dengan geser Caesar, jumlah rel Rail Fence, dan kata sandi AES yang dipilih untuk laporan itu.</p>
+          <p>Klik <b>Muat Laporan</b>, lalu <b>Dekripsi</b> pada laporan yang ingin dibaca.
+            Server membuka lapisan AES-256-GCM, Rail Fence, lalu Caesar. Inbox menampilkan
+            parameter enkripsi, ciphertext, dan isi laporan, lalu menandai laporan sebagai dibaca.</p>
         </details>
         <div class="card">
-          <textarea
-            id="txtIn"
-            placeholder="Pesan perintah (plaintext)"
-          ></textarea>
-          <div class="row" style="margin-top: 8px">
-            <label class="mut"
-              >Geser Caesar
-              <input
-                id="txtShift"
-                type="number"
-                value="7"
-                style="width: 70px" /></label
-            ><label class="mut"
-              >Rel
-              <input
-                id="txtRails"
-                type="number"
-                min="2"
-                value="4"
-                style="width: 70px" /></label
-            ><input
-              id="txtPass"
-              class="pw"
-              type="text"
-              placeholder="Kunci AES (min 6)"
-              autocomplete="off"
-            /><button class="go" id="btnTxtEnc">Enkripsi</button>
-          </div>
-          <p class="msg" id="msgTxt"></p>
-          <div id="txtTrace"></div>
-        </div>
-        <div class="card">
-          <h3>Dekripsi</h3>
-          <textarea id="txtPkg" placeholder="Paket Base64"></textarea
-          ><button class="go" id="btnTxtDec" style="margin-top: 8px">
-            Dekripsi (pakai geser, rel, kunci di atas)
-          </button>
-          <p class="msg" id="msgTxtDec"></p>
-          <div id="txtDecTrace"></div>
+          <h3>Inbox Laporan Pemilih</h3>
+          <button class="go alt" id="btnLoadReports">Muat Laporan</button>
+          <p class="msg" id="msgReports"></p>
+          <div id="reportList"></div>
+          <div id="reportPlain"></div>
         </div>
       </section>
 

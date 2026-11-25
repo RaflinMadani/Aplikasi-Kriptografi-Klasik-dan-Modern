@@ -38,6 +38,20 @@ CREATE TABLE `campaign_docs` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `reports`
+--
+
+CREATE TABLE `reports` (
+  `id` int(11) NOT NULL,
+  `voter_code` varchar(12) NOT NULL,
+  `message_encrypted` text NOT NULL,
+  `is_read` tinyint(1) DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `candidates`
 --
 
@@ -111,7 +125,9 @@ CREATE TABLE `voters` (
   `token_hash` char(64) NOT NULL,
   `face_enc` text NOT NULL,
   `failed_attempts` tinyint(4) NOT NULL DEFAULT 0,
-  `has_voted` tinyint(1) NOT NULL DEFAULT 0
+  `locked_until_ms` bigint(20) DEFAULT NULL,
+  `has_voted` tinyint(1) NOT NULL DEFAULT 0,
+  `vote_sealed` tinyint(1) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
@@ -124,6 +140,8 @@ INSERT INTO `voters` (`id`, `voter_code`, `nik_hash`, `pin_salt`, `pin_hash`, `t
 --
 -- Triggers `voters`
 --
+-- Suara dalam dump ini masih berada di pending_votes.
+UPDATE voters SET vote_sealed = 0 WHERE has_voted = 1;
 DELIMITER $$
 CREATE TRIGGER `trg_lock_has_voted` BEFORE UPDATE ON `voters` FOR EACH ROW BEGIN
   IF OLD.has_voted = 1 AND NEW.has_voted = 0 THEN
@@ -162,6 +180,13 @@ ALTER TABLE `pending_votes`
   ADD PRIMARY KEY (`id`);
 
 --
+-- Indexes for table `reports`
+--
+ALTER TABLE `reports`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `voter_code` (`voter_code`);
+
+--
 -- Indexes for table `voters`
 --
 ALTER TABLE `voters`
@@ -192,10 +217,26 @@ ALTER TABLE `pending_votes`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
+-- AUTO_INCREMENT for table `reports`
+--
+ALTER TABLE `reports`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `voters`
 --
 ALTER TABLE `voters`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
+
+--
+-- Constraints for dumped tables
+--
+
+--
+-- Constraints for table `reports`
+--
+ALTER TABLE `reports`
+  ADD CONSTRAINT `reports_ibfk_1` FOREIGN KEY (`voter_code`) REFERENCES `voters` (`voter_code`);
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

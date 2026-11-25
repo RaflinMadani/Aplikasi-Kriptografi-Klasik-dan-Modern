@@ -2,6 +2,7 @@
 const $ = id => document.getElementById(id);
 const S = { session: null, role: null, voter: null, nik: '', voted: false, votedAt: null, block: null, params: null, idle: null };
 let chart, dashTimer, lastSecure = null;
+let sealStatusTimer;
 let detectedDongle = null;     // dongle voter yang terdeteksi dari USB
 let usbScanTimer = null;       // polling auto-detect USB saat di halaman gate
 let _lockTimer = null;         // timer countdown blokir akun
@@ -11,7 +12,7 @@ const vis = c => (c === ' ' ? '␣' : c);
 const say = (id, t, ok = true) => { $(id).textContent = t; $(id).className = 'msg ' + (ok ? 'ok' : 'bad'); };
 const toast = (t, ok = true) => { const d = document.createElement('div'); d.className = 'toast' + (ok ? '' : ' bad'); d.textContent = t; $('toasts').append(d); setTimeout(() => d.remove(), 4000); };
 const table = (head, rows) => `<div class="tw"><table><thead><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
-const guard = (id, fn) => async () => { try { await fn(); } catch (e) { const m = e.message || String(e); say(id, m, false); toast(m, false); } };
+const guard = (id, fn) => async event => { try { await fn(event); } catch (e) { const m = e.message || String(e); say(id, m, false); toast(m, false); } };
 const download = (blob, name) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
 const scan = (id, n) => captureFace($('cam'), { canvas: $('camOverlay'), onStatus: t => say(id, t), samples: n });
 const loadImg = f => new Promise((res, rej) => { const u = URL.createObjectURL(f), i = new Image(); i.onload = () => { URL.revokeObjectURL(u); res(i); }; i.onerror = () => rej(new Error('Gambar tidak valid.')); i.src = u; });
@@ -78,13 +79,15 @@ function _buildLockModal(remaining) {
 }
 
 // ----- navigasi berdasarkan peran -----
-const TABS = { voter: ['vote', 'status'], admin: ['text', 'file', 'stego', 'dash'] };
+const TABS = { voter: ['vote', 'status', 'report'], admin: ['text', 'file', 'stego', 'dash'] };
 const allowed = () => TABS[S.role] || ['gate'];
 function refreshNav() { document.querySelectorAll('nav button').forEach(b => { b.hidden = !allowed().includes(b.dataset.t); }); }
 function show(t) {
   if (!allowed().includes(t)) t = allowed()[0];
   document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === t));
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  clearTimeout(sealStatusTimer);
+  if (t === 'status' && S.voted && S.voteSealed !== 1) refreshSealStatus();
 }
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   show(b.dataset.t);
@@ -104,9 +107,10 @@ function resetGate() {
   ['msgReg', 'msgLogin', 'msgAdmin'].forEach(i => { $(i).textContent = ''; $(i).className = 'msg'; });
 }
 function clearWork() {
-  ['txtIn', 'txtPkg', 'txtPass', 'fileIn', 'filePass', 'secIn', 'secPass', 'imgIn', 'stegoMsg', 'stegoOut'].forEach(i => { $(i).value = ''; });
-  ['txtTrace', 'txtDecTrace', 'fileTrace', 'decTrace', 'docList', 'dashStat', 'blocks', 'statusBox', 'statusTrace', 'candList'].forEach(i => { $(i).innerHTML = ''; });
-  ['msgTxt', 'msgTxtDec', 'msgFile', 'msgSecDec', 'msgStego', 'msgDash', 'msgVote'].forEach(i => { $(i).textContent = ''; $(i).className = 'msg'; });
+  $('reportForm').reset();
+  ['fileIn', 'filePass', 'secIn', 'secPass', 'imgIn', 'stegoMsg', 'stegoOut', 'reportMsg'].forEach(i => { $(i).value = ''; });
+  ['fileTrace', 'decTrace', 'docList', 'dashStat', 'blocks', 'statusBox', 'statusTrace', 'candList', 'reportList', 'reportPlain'].forEach(i => { $(i).innerHTML = ''; });
+  ['msgFile', 'msgSecDec', 'msgStego', 'msgDash', 'msgVote', 'msgReport', 'msgReports'].forEach(i => { $(i).textContent = ''; $(i).className = 'msg'; });
   chart?.destroy(); chart = null; clearInterval(dashTimer); $('autoDash').checked = false; lastSecure = null; $('btnVote').disabled = !!S.voted;
 }
 function lock(reason, ok = false) {
@@ -211,7 +215,7 @@ $('btnLogin').onclick = async () => {
     const r = await api('/api/login', { method: 'POST', body: { voterCode: detectedDongle.voterCode, pin, token: detectedDongle.token, descriptor } });
     // Simpan session di window agar polling USB status tahu siapa yang login
     window.__CURRENT_VOTER_SESSION = r.session;
-    Object.assign(S, { session: r.session, role: 'voter', voter: detectedDongle.voterCode, nik: detectedDongle.nikMask || '(disamarkan)', voted: r.hasVoted });
+    Object.assign(S, { session: r.session, role: 'voter', voter: detectedDongle.voterCode, nik: detectedDongle.nikMask || '(disamarkan)', voted: r.hasVoted, voteSealed: r.voteSealed });
     S.params = await api('/api/election');
     // Hentikan polling gate, mulai guard sesi
     clearInterval(usbScanTimer); usbScanTimer = null;
@@ -244,41 +248,20 @@ const box = (t, x) => `<div class="explain"><b>${esc(t)}</b><p>${esc(x)}</p></di
 const charRows = (a, b) => { const y = [...b]; return [...a].map((c, i) => [i + 1, vis(c), vis(y[i] ?? '')]).slice(0, 60); };
 const pkgRows = p => { const u = Uint8Array.from(atob(p), c => c.charCodeAt(0)); return [['Salt PBKDF2 (16 B)', hex(u.slice(0, 16))], ['IV GCM (12 B)', hex(u.slice(16, 28))], [`Ciphertext + tag (${u.length - 28} B)`, hex(u.slice(28, 52)) + (u.length > 52 ? '...' : '')]]; };
 function railRows(n, r) { const rows = Array.from({ length: r }, () => []); let x = 0, d = 1; for (let i = 0; i < n; i++) { rows[x].push(i); if (x === 0) d = 1; else if (x === r - 1) d = -1; x += d; } return rows; }
-function gridHtml(text, rails, mode) { // enc: huruf ditaruh sesuai posisi zig-zag; dec: huruf cipher mengisi tiap rel berurutan
+function gridHtml(text, rails) {
   const L = [...text].filter(c => /[A-Za-z]/.test(c)); rails = Math.max(2, rails | 0);
   if (!L.length || L.length > 48) return '<p class="mut">Ilustrasi grid tampil untuk 1-48 huruf.</p>';
-  let k = 0; const rows = railRows(L.length, rails).map(ix => { const line = Array(L.length).fill('·'); ix.forEach(i => { line[i] = mode === 'enc' ? L[i] : L[k++]; }); return line.join(' '); });
-  return `<div class="tw"><pre class="grid">${esc(rows.join('\n'))}</pre></div><p class="mut">${mode === 'enc' ? 'Dibaca baris demi baris (atas ke bawah) menghasilkan ciphertext Rail.' : 'Dibaca zig-zag (kiri ke kanan) menghasilkan cipher Caesar.'}</p>`;
+  const rows = railRows(L.length, rails).map(ix => { const line = Array(L.length).fill('·'); ix.forEach(i => { line[i] = L[i]; }); return line.join(' '); });
+  return `<div class="tw"><pre class="grid">${esc(rows.join('\n'))}</pre></div><p class="mut">Dibaca baris demi baris (atas ke bawah) menghasilkan ciphertext Rail.</p>`;
 }
 const stage = (t, x, rows, extra = '') => box(t, x) + table(['Data', 'Nilai'], rows) + extra;
 function renderLayers(el, plain, r, shift, rails) {
   const L = r.layers;
   el.innerHTML = '<h3>Alur enkripsi bertahap</h3>'
     + stage(`Tahap 1: Plaintext → Cipher Caesar (geser ${shift})`, EX.caesar, [['Plaintext', plain], ['Cipher Caesar', L.caesar]], table(['#', 'Plaintext', 'Caesar'], charRows(plain, L.caesar)))
-    + stage(`Tahap 2: Cipher Caesar → Cipher Rail Fence (${rails} rel)`, EX.rail, [['Masukan (cipher Caesar)', L.caesar], ['Cipher Rail Fence', L.rail]], gridHtml(L.caesar, rails, 'enc'))
+    + stage(`Tahap 2: Cipher Caesar → Cipher Rail Fence (${rails} rel)`, EX.rail, [['Masukan (cipher Caesar)', L.caesar], ['Cipher Rail Fence', L.rail]], gridHtml(L.caesar, rails))
     + stage('Tahap 3: Cipher Rail Fence → AES-256-GCM', EX.aes, [['Masukan (cipher Rail)', L.rail], ['Paket Base64 akhir', L.aes], ...pkgRows(L.aes)]);
 }
-function renderDecLayers(el, pkg, s1, s2, s3, o) {
-  el.innerHTML = '<h3>Alur dekripsi bertahap (urutan dibalik)</h3>'
-    + stage('Tahap 1: Paket AES-256-GCM → Cipher Rail Fence', EX.aes, [...pkgRows(pkg), ['Tag GCM', 'valid'], ['Hasil (cipher Rail)', s1]])
-    + stage(`Tahap 2: Cipher Rail Fence → Cipher Caesar (${o.rails} rel)`, EX.rail, [['Masukan (cipher Rail)', s1], ['Hasil (cipher Caesar)', s2]], gridHtml(s1, o.rails, 'dec'))
-    + stage(`Tahap 3: Cipher Caesar → Plaintext (geser balik ${o.shift})`, EX.caesar, [['Masukan (cipher Caesar)', s2], ['Plaintext', s3]], table(['#', 'Caesar', 'Plaintext'], charRows(s2, s3)));
-}
-const textOpts = () => {
-  const o = { shift: +$('txtShift').value, rails: +$('txtRails').value, pass: $('txtPass').value };
-  if (!Number.isInteger(o.shift) || !Number.isInteger(o.rails) || o.rails < 2 || o.pass.length < 6) throw new Error('Geser bilangan bulat, rel minimal 2, kunci AES minimal 6 karakter.'); return o;
-};
-$('btnTxtEnc').onclick = guard('msgTxt', async () => {
-  const t = $('txtIn').value; if (!t) throw new Error('Isi pesan.'); const o = textOpts();
-  const r = await Layers.superEncrypt(t, o); renderLayers($('txtTrace'), t, r, o.shift, o.rails);
-  $('txtPkg').value = r.package; say('msgTxt', 'Terenkripsi. Paket Base64 disalin ke kotak dekripsi.'); toast('Pesan perintah terenkripsi 3 lapis.');
-});
-$('btnTxtDec').onclick = guard('msgTxtDec', async () => {
-  const o = textOpts(), pkg = $('txtPkg').value.trim(); if (!pkg) throw new Error('Isi paket Base64.');
-  const s1 = await Layers.aesDecrypt(pkg, o.pass), s2 = Layers.rail(s1, o.rails, true), s3 = Layers.caesar(s2, o.shift, true);
-  renderDecLayers($('txtDecTrace'), pkg, s1, s2, s3, o); say('msgTxtDec', 'Hasil: ' + s3); toast('Pesan berhasil didekripsi.');
-});
-
 // ----- Surat suara dan status -----
 async function loadCandidates() {
   const c = await api('/api/candidates'); $('btnVote').disabled = false;
@@ -289,17 +272,35 @@ function refreshVoteSection() {
   $('candList').innerHTML = '<p class="mut">Anda sudah memilih. Lihat halaman <b>Status Pemilih</b> untuk detail.</p>';
   $('btnVote').hidden = true;
 }
+async function refreshSealStatus() {
+  const session = S.session;
+  const active = () => S.session === session && $('status').classList.contains('on');
+  try {
+    const result = await api('/api/vote/status');
+    if (active() && S.voteSealed !== 1) {
+      S.voteSealed = result.voteSealed;
+      renderStatus();
+    }
+  } catch {
+    // Pertahankan status terakhir selama koneksi terputus.
+  }
+  if (active() && S.voteSealed !== 1) {
+    clearTimeout(sealStatusTimer);
+    sealStatusTimer = setTimeout(refreshSealStatus, 3000);
+  }
+}
 function renderStatus() {
+  const sealLabel = S.voteSealed === 1 ? 'Sudah tersegel' : S.voteSealed === 0 ? 'Menunggu disegel' : 'Status penyegelan belum diketahui';
   $('statusBox').innerHTML = '<h3>Ringkasan akun</h3>' + table(['Item', 'Nilai'], [['NIK', S.nik], ['Kode pemilih', S.voter], ['Autentikasi', 'Dongle + PIN + Wajah (3FA)'],
     ['Status suara', S.voted ? 'SUDAH MEMILIH (terkunci permanen)' : 'Belum memilih'], ['Waktu mencatat', S.votedAt ? S.votedAt.toLocaleString() : '-'],
-    ['Blok ledger', S.block != null ? '#' + S.block : S.voted ? 'Menunggu disegel' : '-']])
+    ['Blok ledger', S.voted ? sealLabel + (S.block != null ? ' (#' + S.block + ')' : '') : '-']])
     + '<p class="mut">Ledger hanya menyimpan hash pilihan tanpa identitas Anda, sehingga pilihan tidak dapat dilacak ke akun ini.</p><button class="go" data-logout>Logout</button>';
 }
 $('btnVote').onclick = guard('msgVote', async () => {
   const c = document.querySelector('input[name=cand]:checked'); if (!c) throw new Error('Pilih kandidat.');
   const plain = JSON.stringify({ candidateId: +c.value }), r = await Layers.superEncrypt(plain, { ...S.params, pass: S.session });
   const res = await api('/api/vote', { method: 'POST', body: { ballot: r.package } });
-  Object.assign(S, { voted: true, votedAt: new Date(), block: res.sealedBlock });
+  Object.assign(S, { voted: true, votedAt: new Date(), block: res.sealedBlock, voteSealed: Number(res.sealedBlock != null) });
   $('btnVote').disabled = true; $('btnVote').hidden = true; $('candList').innerHTML = ''; say('msgVote', 'Anda sudah memilih.');
   updateAcct(); renderStatus(); renderLayers($('statusTrace'), plain, r, S.params.shift, S.params.rails);
   toast('Suara terenkripsi 3 lapis dan tercatat.'); show('status');
@@ -368,5 +369,76 @@ $('btnDash').onclick = guard('msgDash', async () => { await refreshDash(); say('
 $('autoDash').onchange = () => { clearInterval(dashTimer); if ($('autoDash').checked) dashTimer = setInterval(() => refreshDash().catch(e => say('msgDash', e.message, false)), 5000); };
 $('btnSeal').onclick = guard('msgDash', async () => { const r = await api('/api/admin/seal', { method: 'POST' }); await refreshDash(); toast(r.sealedBlock != null ? `Blok #${r.sealedBlock} tersegel.` : 'Tidak ada suara tertunda.'); });
 $('btnTamper').onclick = guard('msgDash', async () => { await api('/api/admin/tamper', { method: 'POST', body: { idx: 1 } }); await refreshDash(); toast('Blok 1 dirusak (demo). Lihat status rantai.', false); });
+
+// ----- Laporkan Kendala (Voter) -----
+$('reportForm').onsubmit = guard('msgReport', async event => {
+  event.preventDefault();
+  const msg = $('reportMsg').value.trim();
+  if (!msg) throw new Error('Isi pesan terlebih dahulu.');
+  if ($('btnReport').disabled) return;
+  const session = S.session;
+  $('btnReport').disabled = true;
+  try {
+    await api('/api/report', { method: 'POST', body: {
+      message: msg, shift: $('reportShift').valueAsNumber,
+      rails: $('reportRails').valueAsNumber, pass: $('reportPass').value
+    } });
+  } finally {
+    $('btnReport').disabled = false;
+  }
+  if (S.session !== session) return;
+  $('reportForm').reset();
+  say('msgReport', 'Laporan berhasil dikirim. Panitia akan meninjau laporan Anda.', true);
+  toast('Laporan kendala terkirim.');
+});
+
+// ----- Inbox Laporan Pemilih (Admin) -----
+$('btnLoadReports').onclick = guard('msgReports', async () => {
+  const rows = await api('/api/admin/reports');
+  if (!rows.length) {
+    $('reportList').innerHTML = '<p class="mut">Belum ada laporan masuk.</p>';
+    say('msgReports', 'Tidak ada laporan.', true);
+    return;
+  }
+  $('reportList').innerHTML = `<div class="tw"><table>
+    <thead><tr><th>No</th><th>Kode Pemilih</th><th>Waktu</th><th>Status</th><th></th></tr></thead>
+    <tbody>${rows.map(r => `<tr style="cursor:pointer" data-report-id="${r.id}" data-report-read="${r.is_read}">
+      <td>${r.id}</td>
+      <td>${esc(r.voter_code)}</td>
+      <td>${esc(String(r.created_at).replace('T', ' ').slice(0, 19))}</td>
+      <td class="${r.is_read ? 'mut' : 'bad'}">${r.is_read ? 'Dibaca' : 'Baru'}</td>
+      <td><button type="button" class="go alt">Dekripsi</button></td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+  say('msgReports', rows.length + ' laporan dimuat.', true);
+  toast('Daftar laporan dimuat.');
+});
+$('reportList').onclick = guard('msgReports', async e => {
+  const row = e.target.closest('[data-report-id]');
+  if (!row) return;
+  const id = row.dataset.reportId;
+  const detail = $('reportPlain');
+  detail.dataset.selected = id;
+  detail.textContent = '';
+  const r = await api('/api/admin/reports/' + id + '/read', { method: 'POST' });
+  if (!row.isConnected) return;
+  if (detail.dataset.selected === id)
+    detail.innerHTML = `<div class="card">
+      <h3>Laporan #${esc(id)}</h3>
+      ${r.encryption ? `<p>Geser Caesar: <b>${esc(r.encryption.shift)}</b> · Rail Fence: <b>${esc(r.encryption.rails)} rel</b> · AES: <b>256-bit GCM</b></p>
+      ${r.encryption.voterPassphrase == null
+        ? '<p>Kata sandi AES berasal dari konfigurasi server (laporan lama).</p>'
+        : `<details><summary>Lihat kata sandi AES dari pemilih</summary><code style="white-space: pre-wrap; overflow-wrap: anywhere">${esc(r.encryption.voterPassphrase)}</code></details>`}`
+        : '<p>Keterangan kunci belum tersedia dari server.</p>'}
+      <p><b>Ciphertext (paket Base64)</b></p>
+      <p style="overflow-wrap: anywhere"><code>${esc(r.ciphertext)}</code></p>
+      <p><b>Hasil dekripsi</b></p>
+      <p style="white-space: pre-wrap; overflow-wrap: anywhere">${esc(r.plaintext)}</p>
+    </div>`;
+  // Update status baris menjadi Dibaca
+  row.dataset.reportRead = '1';
+  const statusCell = row.cells[3];
+  if (statusCell) { statusCell.textContent = 'Dibaca'; statusCell.className = 'mut'; }
+});
 
 document.addEventListener('DOMContentLoaded', () => lock(''));

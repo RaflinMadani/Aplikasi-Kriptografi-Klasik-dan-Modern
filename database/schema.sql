@@ -11,7 +11,8 @@ CREATE TABLE voters (
   face_enc TEXT NOT NULL,                   -- descriptor wajah, AES-256-GCM
   failed_attempts TINYINT NOT NULL DEFAULT 0,
   locked_until_ms BIGINT NULL DEFAULT NULL,    -- epoch ms UTC, dikunci sementara setelah 5x gagal
-  has_voted TINYINT(1) NOT NULL DEFAULT 0
+  has_voted TINYINT(1) NOT NULL DEFAULT 0,
+  vote_sealed TINYINT(1) NULL
 );
 CREATE TABLE candidates (
   id INT AUTO_INCREMENT PRIMARY KEY,
@@ -37,6 +38,15 @@ CREATE TABLE IF NOT EXISTS campaign_docs (
     size INT NOT NULL,
     data LONGBLOB NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS reports (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    voter_code VARCHAR(12) NOT NULL,
+    message_encrypted TEXT NOT NULL,
+    is_read TINYINT(1) DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (voter_code) REFERENCES voters(voter_code)
 );
 
 -- has_voted terkunci permanen: tidak boleh kembali ke 0
