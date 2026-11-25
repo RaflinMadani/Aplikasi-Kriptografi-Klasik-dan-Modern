@@ -677,7 +677,7 @@ app.post(
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
-      await led.ensureGenesis(conn);
+      await led.ensureGenesis(conn, true);
       const [[c]] = await conn.query("SELECT id FROM candidates WHERE id = ?", [
         cid,
       ]);
@@ -701,6 +701,7 @@ app.post(
       ]);
       const block = await led.sealIfReady(conn, BLOCK);
       await conn.commit();
+      sessions.delete(req.sessionToken);
       res.json({ ok: true, sealedBlock: block });
     } catch (e) {
       await conn.rollback();
@@ -738,7 +739,7 @@ app.post(
     const c = await pool.getConnection();
     try {
       await c.beginTransaction();
-      await led.ensureGenesis(c);
+      await led.ensureGenesis(c, true);
       const sealedBlock = await led.sealIfReady(c, 1);
       await c.commit();
       res.json({ sealedBlock });

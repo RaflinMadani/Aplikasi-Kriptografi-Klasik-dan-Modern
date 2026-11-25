@@ -12,7 +12,7 @@ const vis = c => (c === ' ' ? '␣' : c);
 const say = (id, t, ok = true) => { $(id).textContent = t; $(id).className = 'msg ' + (ok ? 'ok' : 'bad'); };
 const toast = (t, ok = true) => { const d = document.createElement('div'); d.className = 'toast' + (ok ? '' : ' bad'); d.textContent = t; $('toasts').append(d); setTimeout(() => d.remove(), 4000); };
 const table = (head, rows) => `<div class="tw"><table><thead><tr>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
-const guard = (id, fn) => async event => { try { await fn(event); } catch (e) { const m = e.message || String(e); say(id, m, false); toast(m, false); } };
+const guard = (id, fn) => async () => { try { await fn(); } catch (e) { const m = e.message || String(e); say(id, m, false); toast(m, false); } };
 const download = (blob, name) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
 const scan = (id, n) => captureFace($('cam'), { canvas: $('camOverlay'), onStatus: t => say(id, t), samples: n });
 const loadImg = f => new Promise((res, rej) => { const u = URL.createObjectURL(f), i = new Image(); i.onload = () => { URL.revokeObjectURL(u); res(i); }; i.onerror = () => rej(new Error('Gambar tidak valid.')); i.src = u; });
@@ -87,7 +87,8 @@ function show(t) {
   document.querySelectorAll('section').forEach(s => s.classList.toggle('on', s.id === t));
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   clearTimeout(sealStatusTimer);
-  if (t === 'status' && S.voted && S.voteSealed !== 1) refreshSealStatus();
+  // Setelah kirim suara sesi berakhir. Status diperiksa lagi setelah login ulang.
+  if (t === 'status' && S.voted && !S.votedAt && S.voteSealed !== 1) refreshSealStatus();
 }
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   show(b.dataset.t);
@@ -337,7 +338,13 @@ $('btnDocs').onclick = guard('msgFile', async () => {
   $('docList').innerHTML = d.length ? `<div class="tw"><table><tr><th>ID</th><th>Nama</th><th>Ukuran</th><th></th></tr>${d.map(x => `<tr><td>${x.id}</td><td>${esc(x.name)}</td><td>${x.size}</td><td><button class="go alt" data-doc="${x.id}" data-name="${esc(x.name)}">Unduh</button></td></tr>`).join('')}</table></div>` : '<p class="mut">Belum ada dokumen.</p>';
   toast('Daftar dokumen dimuat.');
 });
-$('docList').onclick = guard('msgFile', async e => { const b = e.target.closest('[data-doc]'); if (b) { download(await (await api('/api/docs/' + b.dataset.doc)).blob(), b.dataset.name); toast(b.dataset.name + ' diunduh.'); } });
+$('docList').onclick = event => guard('msgFile', async () => {
+  const button = event.target.closest('[data-doc]');
+  if (!button) return;
+  const response = await api('/api/docs/' + button.dataset.doc);
+  download(await response.blob(), button.dataset.name);
+  toast(button.dataset.name + ' diunduh.');
+})();
 
 // ----- Anti-Counterfeit Credential (DCT) -----
 $('btnEmbed').onclick = guard('msgStego', async () => {
@@ -371,7 +378,7 @@ $('btnSeal').onclick = guard('msgDash', async () => { const r = await api('/api/
 $('btnTamper').onclick = guard('msgDash', async () => { await api('/api/admin/tamper', { method: 'POST', body: { idx: 1 } }); await refreshDash(); toast('Blok 1 dirusak (demo). Lihat status rantai.', false); });
 
 // ----- Laporkan Kendala (Voter) -----
-$('reportForm').onsubmit = guard('msgReport', async event => {
+$('reportForm').onsubmit = event => guard('msgReport', async () => {
   event.preventDefault();
   const msg = $('reportMsg').value.trim();
   if (!msg) throw new Error('Isi pesan terlebih dahulu.');
@@ -390,7 +397,7 @@ $('reportForm').onsubmit = guard('msgReport', async event => {
   $('reportForm').reset();
   say('msgReport', 'Laporan berhasil dikirim. Panitia akan meninjau laporan Anda.', true);
   toast('Laporan kendala terkirim.');
-});
+})();
 
 // ----- Inbox Laporan Pemilih (Admin) -----
 $('btnLoadReports').onclick = guard('msgReports', async () => {
@@ -413,7 +420,7 @@ $('btnLoadReports').onclick = guard('msgReports', async () => {
   say('msgReports', rows.length + ' laporan dimuat.', true);
   toast('Daftar laporan dimuat.');
 });
-$('reportList').onclick = guard('msgReports', async e => {
+$('reportList').onclick = e => guard('msgReports', async () => {
   const row = e.target.closest('[data-report-id]');
   if (!row) return;
   const id = row.dataset.reportId;
@@ -439,6 +446,6 @@ $('reportList').onclick = guard('msgReports', async e => {
   row.dataset.reportRead = '1';
   const statusCell = row.cells[3];
   if (statusCell) { statusCell.textContent = 'Dibaca'; statusCell.className = 'mut'; }
-});
+})();
 
 document.addEventListener('DOMContentLoaded', () => lock(''));

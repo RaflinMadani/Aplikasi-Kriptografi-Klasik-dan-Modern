@@ -21,7 +21,11 @@ function merkleRoot(leaves) {
 const iso = (d) => d.toISOString().slice(0, 19).replace("T", " ");
 const parse = (v) => (typeof v === "string" ? JSON.parse(v) : v);
 
-async function ensureGenesis(conn) {
+async function ensureGenesis(conn, lockBatch = false) {
+  if (!lockBatch) {
+    const [[r]] = await conn.query("SELECT COUNT(*) n FROM ledger_blocks");
+    if (r.n) return;
+  }
   // Dalam transaksi vote/seal, baris genesis mengunci satu batch sampai commit.
   const ts = iso(new Date()),
     root = merkleRoot([]);
