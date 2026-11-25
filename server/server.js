@@ -31,6 +31,8 @@ const SECRET = E.ELECTION_SECRET || "dev-secret",
   ADMIN_KEY = E.ADMIN_KEY || "dev-admin";
 const LOCKOUT_SECONDS = Number(E.LOCKOUT_SECONDS) || 60;
 const PARAMS = { shift: +E.ELECTION_SHIFT || 7, rails: +E.ELECTION_RAILS || 4 };
+const reportWrappingKey = crypto.createHmac("sha256", SECRET)
+  .update("report-options-v1").digest("hex");
 const pool = mysql.createPool({
   host: E.DB_HOST || "localhost",
   user: E.DB_USER || "root",
@@ -559,6 +561,7 @@ app.post(
         15 * 60e3,
       ),
       hasVoted: !!v.has_voted,
+      voteSealed: v.vote_sealed,
     });
   }),
 );
@@ -649,6 +652,11 @@ app.get("/api/admin/generate-dongle", (req, res) => {
     .json({ role: "admin", token });
 });
 
+app.get("/api/vote/status", auth, wrap(async (req, res) => {
+  const [[voter]] = await pool.query("SELECT vote_sealed FROM voters WHERE id = ?", [req.voterId]);
+  res.json({ voteSealed: voter.vote_sealed });
+}));
+
 app.post(
   "/api/vote",
   auth,
@@ -669,6 +677,7 @@ app.post(
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
+      await led.ensureGenesis(conn);
       const [[c]] = await conn.query("SELECT id FROM candidates WHERE id = ?", [
         cid,
       ]);
@@ -684,16 +693,14 @@ app.post(
         await conn.rollback();
         return res.status(409).json({ error: "Anda sudah memilih." });
       }
-      await conn.query("UPDATE voters SET has_voted = 1 WHERE id = ?", [
+      await conn.query("UPDATE voters SET has_voted = 1, vote_sealed = 0 WHERE id = ?", [
         req.voterId,
       ]);
       await conn.query("INSERT INTO pending_votes (choice_hash) VALUES (?)", [
         led.choiceHash(cid, SECRET),
       ]);
-      await led.ensureGenesis(conn);
       const block = await led.sealIfReady(conn, BLOCK);
       await conn.commit();
-      sessions.delete(req.sessionToken);
       res.json({ ok: true, sealedBlock: block });
     } catch (e) {
       await conn.rollback();
@@ -730,8 +737,14 @@ app.post(
   wrap(async (_, res) => {
     const c = await pool.getConnection();
     try {
+      await c.beginTransaction();
       await led.ensureGenesis(c);
-      res.json({ sealedBlock: await led.sealIfReady(c, 1) });
+      const sealedBlock = await led.sealIfReady(c, 1);
+      await c.commit();
+      res.json({ sealedBlock });
+    } catch (err) {
+      await c.rollback();
+      throw err;
     } finally {
       c.release();
     }
@@ -817,6 +830,80 @@ app.get(
     res.type("application/octet-stream").send(d.data);
   }),
 );
+// ----- Laporan Kendala Pemilih -----
+app.post(
+  "/api/report",
+  auth,
+  wrap(async (req, res) => {
+    const { message, shift, rails, pass } = req.body;
+    if (!message || typeof message !== "string" || !message.trim())
+      return res.status(400).json({ error: "Pesan tidak boleh kosong." });
+    if (message.length > 2000)
+      return res.status(400).json({ error: "Pesan maksimal 2000 karakter." });
+    if (!Number.isInteger(shift) || shift < 0 || shift > 25)
+      return res.status(400).json({ error: "Geser Caesar harus bilangan bulat 0–25." });
+    if (!Number.isInteger(rails) || rails < 2 || rails > 2000)
+      return res.status(400).json({ error: "Jumlah rel harus bilangan bulat 2–2000." });
+    if (typeof pass !== "string" || pass.length < 6 || pass.length > 128)
+      return res.status(400).json({ error: "Kata sandi AES harus 6–128 karakter." });
+    const [[voter]] = await pool.query(
+      "SELECT voter_code FROM voters WHERE id = ?",
+      [req.voterId],
+    );
+    if (!voter) return res.status(404).json({ error: "Pemilih tidak ditemukan." });
+    const options = { shift, rails, pass };
+    const result = await Layers.superEncrypt(message, options);
+    const wrappedOptions = await Layers.aesEncrypt(JSON.stringify(options), reportWrappingKey);
+    const envelope = JSON.stringify({ version: 1, ciphertext: result.package, wrappedOptions });
+    await pool.query(
+      "INSERT INTO reports (voter_code, message_encrypted) VALUES (?, ?)",
+      [voter.voter_code, envelope],
+    );
+    res.json({ ok: true });
+  }),
+);
+
+app.get(
+  "/api/admin/reports",
+  admin,
+  wrap(async (req, res) => {
+    const [rows] = await pool.query(
+      "SELECT id, voter_code, is_read, created_at FROM reports ORDER BY created_at DESC",
+    );
+    res.json(rows);
+  }),
+);
+
+app.post(
+  "/api/admin/reports/:id/read",
+  admin,
+  wrap(async (req, res) => {
+    const id = +req.params.id || 0;
+    const [[row]] = await pool.query(
+      "SELECT message_encrypted FROM reports WHERE id = ?",
+      [id],
+    );
+    if (!row) return res.status(404).json({ error: "Laporan tidak ditemukan." });
+    // Laporan lama berisi paket Base64 dengan parameter pemilihan.
+    let ciphertext = row.message_encrypted;
+    let options = { ...PARAMS, pass: SECRET };
+    let voterPassphrase = null;
+    if (ciphertext.startsWith("{")) {
+      const envelope = JSON.parse(ciphertext);
+      if (envelope.version !== 1) throw new Error("Versi paket laporan tidak dikenal.");
+      options = JSON.parse(await Layers.aesDecrypt(envelope.wrappedOptions, reportWrappingKey));
+      voterPassphrase = options.pass;
+      ciphertext = envelope.ciphertext;
+    }
+    const plaintext = await Layers.superDecrypt(ciphertext, options);
+    await pool.query("UPDATE reports SET is_read = 1 WHERE id = ?", [id]);
+    res.set("Cache-Control", "no-store").json({
+      ciphertext, plaintext,
+      encryption: { shift: options.shift, rails: options.rails, voterPassphrase },
+    });
+  }),
+);
+
 app.use((err, _req, res, _next) =>
   res.status(400).json({ error: "Permintaan tidak valid." }),
 );

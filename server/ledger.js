@@ -22,11 +22,10 @@ const iso = (d) => d.toISOString().slice(0, 19).replace("T", " ");
 const parse = (v) => (typeof v === "string" ? JSON.parse(v) : v);
 
 async function ensureGenesis(conn) {
-  const [[r]] = await conn.query("SELECT COUNT(*) n FROM ledger_blocks");
-  if (r.n) return;
+  // Dalam transaksi vote/seal, baris genesis mengunci satu batch sampai commit.
   const ts = iso(new Date()),
     root = merkleRoot([]);
-  await conn.query("INSERT INTO ledger_blocks VALUES (?,?,?,?,?,?)", [
+  await conn.query("INSERT INTO ledger_blocks VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE idx = idx", [
     0,
     ts,
     root,
@@ -64,6 +63,7 @@ async function sealIfReady(conn, size) {
   await conn.query("DELETE FROM pending_votes WHERE id IN (?)", [
     pend.map((p) => p.id),
   ]);
+  await conn.query("UPDATE voters SET vote_sealed = 1 WHERE has_voted = 1 AND (vote_sealed = 0 OR vote_sealed IS NULL)");
   return idx;
 }
 async function verifyChain(conn) {
